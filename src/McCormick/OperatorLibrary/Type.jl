@@ -32,7 +32,7 @@ Constructs McCormick relaxation with convex relaxation equal to `y.lo` and
 concave relaxation equal to `y.hi`.
 """
 MC{N}(y::IntervalType) where N = MC{N}(y.lo,y.hi,y,SVector{N,Float64}(zeros(Float64,N)),SVector{N,Float64}(zeros(Float64,N)),true)
-
+MC{N}(y::Float64) where N = MC{N}(IntervalType(y))
 MC{N}(cv::Float64, cc::Float64) where N = MC{N}(cv,cc,IntervalType(cv,cc),SVector{N,Float64}(zeros(Float64,N)),SVector{N,Float64}(zeros(Float64,N)),true)
 
 """

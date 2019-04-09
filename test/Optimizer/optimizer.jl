@@ -7,14 +7,14 @@ println("BEGIN TESTING QUADRATIC RELAXATIONS...")
 println("TESTING QUADRATIC RELAXATIONS COMPLETE.")
 
 println("BEGIN TESTING STANDARD EVALUATOR...")
-#include("standard_evaluator.jl")
+include("standard_evaluator.jl")
 println("TESTING STANDARD EVALUATOR COMPLETE.")
 
 println("BEGIN TESTING IMPLICIT EVALUATOR...")
 #include("implicit_optimizer.jl")
 println("TESTING IMPLICIT EVALUATOR COMPLETE.")
 
-
+#=
 println("BEGIN LP TEST PROBLEMS...")
 module Run_LP_Test_Problems
 
@@ -28,6 +28,7 @@ module Run_LP_Test_Problems
     end
 end
 println("LP TEST COMPLETE.")
+=#
 #=
 println("BEGIN QP TEST PROBLEMS...")
 module Run_QP_Test_Problems
@@ -43,6 +44,7 @@ module Run_QP_Test_Problems
 end
 println("QP TEST COMPLETE.")
 =#
+#=
 println("BEGIN NLP TEST PROBLEMS...")
 module Run_NLP_Test_Problems
 
@@ -69,3 +71,4 @@ module Run_Imp_Test_Problems
     #include("TestProblems/IMPLICIT/Ex5_1a.jl")
 end
 println("IMPLICIT TEST PROBLEMS COMPLETE")
+=#

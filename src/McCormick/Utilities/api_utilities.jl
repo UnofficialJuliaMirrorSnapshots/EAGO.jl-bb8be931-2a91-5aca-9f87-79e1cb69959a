@@ -69,3 +69,35 @@ function set_tolerance!(k::Float64)
   @assert tol > 0.0
   MC_param.env_tol = k
 end
+
+
+"""
+  set_reference_point!
+Specifices the reference point used to contract interval domains for specific
+algorithms. Should correspond to the point of evalution of a subgradient cut.
+"""
+function set_reference!(x::Vector{Float64}, y::Vector{IntervalType}, flag::Bool)
+  MC_param.reference_point = x
+  MC_param.reference_domain = y
+  MC_param.use_reference = flag
+end
+
+"""
+    affine_intv_contract
+
+
+"""
+function affine_intv_contract(x::MC{N}) where N
+  if MC_param.use_reference
+    temp_cv_aff = x.cv
+    temp_cc_aff = x.cc
+    for i in 1:N
+      temp_cv_aff += x.cv_grad[i]*(MC_param.reference_domain[i] - MC_param.reference_point[i])
+      temp_cc_aff += x.cc_grad[i]*(MC_param.reference_domain[i] - MC_param.reference_point[i])
+    end
+    intv_lo = max(x.Intv.lo, temp_cv_aff.lo)
+    intv_hi = min(x.Intv.hi, temp_cc_aff.hi)
+    return MC{N}(x.cv, x.cc, IntervalType(intv_lo, intv_hi), x.cv_grad, x.cc_grad, x.cnst)
+  end
+  return x
+end

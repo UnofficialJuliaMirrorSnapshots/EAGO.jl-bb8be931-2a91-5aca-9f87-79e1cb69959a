@@ -38,7 +38,7 @@ end
 function implicit_relax_h!(h::Function, hj::Function, p_mc::Vector{MC{N}}, pref_mc::Vector{MC{N}},
                      xp_mc::Vector{MC{N}}, x_mc, xa_mc::Vector{MC{N}}, xA_mc::Vector{MC{N}}, z_mc::Vector{MC{N}}, aff_mc::Vector{MC{N}},
                      X::Vector{IntervalType}, P::Vector{IntervalType}, mc_opts::mc_opts, param,
-                     H, J, Y, interval_bnds::Bool, flt_param::Vector{Float64}, precond::Bool) where N
+                     H, J, Y, interval_bnds::Bool, flt_param::Vector{Float64}, precond::Bool; subgrad_cntr::Bool = false) where N
 
     nx::Int = mc_opts.nx
     kmax::Int = mc_opts.kmax
@@ -55,11 +55,13 @@ function implicit_relax_h!(h::Function, hj::Function, p_mc::Vector{MC{N}}, pref_
     z_mc[:] = lambda*xa_mc[:] + (1.0 - lambda)*xA_mc[:]
 
     # Begins loop to generate parameters
+    subgrad_cntr && set_reference!(cv.(pref_mc),P,subgrad_cntr)
     for k=1:(kmax)
       affine_exp!(param[:,k], p_mc, pref_mc, xa_mc, xA_mc, z_mc, nx, lambda)
       pmc_kernel!(h, hj, H, J, Y, z_mc, aff_mc, p_mc, x_mc, xa_mc, xA_mc,
                  cntr, nx, xp_mc, flt_param, precond)
     end
+    subgrad_cntr && set_reference!(cv.(pref_mc), P, false)
 end
 
 """

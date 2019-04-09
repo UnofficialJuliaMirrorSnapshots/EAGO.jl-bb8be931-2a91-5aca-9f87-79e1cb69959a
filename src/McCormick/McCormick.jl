@@ -4,7 +4,8 @@ using StaticArrays, CommonSubexpressions, DiffRules, BenchmarkTools, LinearAlgeb
 
 import Base: +, -, *, /, convert, in, isempty, one, zero, real, eps, max, min,
              abs, inv, exp, exp2, exp10, expm1, log, log2, log10, log1p, acosh,
-             sqrt, sin, cos, tan, min, max, sec, csc, cot, ^, step, sign, intersect
+             sqrt, sin, cos, tan, min, max, sec, csc, cot, ^, step, sign, intersect,
+             promote_rule
 
 import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
                            one, zero, real, eps, max, min, abs, exp,
@@ -30,7 +31,7 @@ export seed_gradient, IntervalType, set_mc_differentiability!, set_multivar_refi
 
 # Export reverse operators
 export plus_rev, mul_rev, min_rev, max_rev, minus_rev, div_rev, exp_rev,
-       exp2_rev, exp10_rev, exp1m_rev, log_rev, log2_rev, log10_rev,
+       exp2_rev, exp10_rev, expm1_rev, log_rev, log2_rev, log10_rev,
        log1p_rev, sin_rev, cos_rev, tan_rev, asin_rev, acos_rev, atan_rev,
        sinh_rev, cosh_rev, tanh_rev, asinh_rev, acosh_rev, atanh_rev,
        abs_rev, sqr_rev, sqrt_rev, pow_rev

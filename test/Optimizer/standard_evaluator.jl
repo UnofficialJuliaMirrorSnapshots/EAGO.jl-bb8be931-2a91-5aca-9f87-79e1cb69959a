@@ -52,7 +52,6 @@ module Standard_Evaluator
         opt = m.moi_backend.optimizer.model.optimizer
         built_evaluator = EAGO.build_nlp_evaluator(MC{2}, source_evaluator, opt)
 
-    #=
         # Add current node and define point
         built_evaluator.current_node = EAGO.NodeBB(Float64[1.0,5.0], Float64[2.0,6.0], -Inf, Inf, 2, 1, true)
         xpoint = Float64[1.5,5.5]
@@ -65,7 +64,8 @@ module Standard_Evaluator
                           built_evaluator.objective.numvalued,
                           built_evaluator.objective.nd, built_evaluator.objective.adj,
                           built_evaluator.objective.const_values, built_evaluator.parameter_values,
-                          built_evaluator.current_node, xpoint, built_evaluator.subexpression_values,
+                          built_evaluator.current_node, xpoint, built_evaluator.subexpression_values_flt,
+                          built_evaluator.subexpression_values_set, built_evaluator.subexpression_isnum,
                           user_input_buffer, user_operators = user_operators)
 
         EAGO.forward_eval_all(built_evaluator,xpoint)
@@ -74,7 +74,7 @@ module Standard_Evaluator
                           built_evaluator.objective.numberstorage,
                           built_evaluator.objective.numvalued,
                           built_evaluator.objective.nd,
-                          built_evaluator.objective.adj)
+                          built_evaluator.objective.adj,xpoint)
 
         EAGO.reverse_eval_all(built_evaluator,xpoint)
 
@@ -104,6 +104,5 @@ module Standard_Evaluator
         @test temp5[1][2] == 1
         @test temp5[2][1] == 1
         @test temp5[2][2] == 2
-    =#
     end
 end

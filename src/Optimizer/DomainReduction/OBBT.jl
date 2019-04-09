@@ -203,6 +203,8 @@ function obbt(x::Optimizer, y::NodeBB)
 
     while ~(isempty(x.obbt_working_lower_index) && isempty(x.obbt_working_upper_index))
 
+        println("x.obbt_working_lower_index: $(x.obbt_working_lower_index)")
+
         # Get lower value
         lower_indx = 0
         upper_indx = 0

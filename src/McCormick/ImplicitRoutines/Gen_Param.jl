@@ -92,7 +92,7 @@ function gen_expansion_params!(h!::Function, hj!::Function, pref_mc::Vector{MC{N
                                aff_mc::Vector{MC{N}}, X::Vector{IntervalType}, P::Vector{IntervalType},
                                opts::mc_opts, sto_out, H::Vector{MC{N}},
                                J::Array{MC{N},2}, Y::Array{Float64,2}, interval_bnds::Bool,
-                               flt_param::Vector{Float64}, precond::Bool) where N
+                               flt_param::Vector{Float64}, precond::Bool; subgrad_cntr::Bool = false) where N
 
   nx::Int = length(X)
   kmax::Int = opts.kmax
@@ -108,18 +108,15 @@ function gen_expansion_params!(h!::Function, hj!::Function, pref_mc::Vector{MC{N
     end
   end
   z_mc[:] = lambda*xa_mc[:] + (1.0 - lambda)*xA_mc[:]
-
   sto_out[:,1:1] .= x_mc
 
+  subgrad_cntr && set_reference!(cv.(pref_mc),P,subgrad_cntr)
   for k=1:(kmax-1)
-
     pmc_kernel!(h!, hj!, H, J, Y, z_mc, aff_mc, pref_mc, x_mc, xa_mc, xA_mc,
                 cntr, nx, xp_mc, flt_param, precond)
-
     affine_exp!(x_mc, pref_mc, pref_mc, xa_mc, xA_mc, z_mc, nx, lambda)
-
     correct_exp!(xa_mc, xA_mc, z_mc, x_mc, X, nx, aff_eps)
-
     sto_out[:,(k+1):(k+1)] .= x_mc
   end
+  subgrad_cntr && set_reference!(cv.(pref_mc), P, false)
 end

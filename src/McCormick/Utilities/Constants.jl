@@ -1,3 +1,5 @@
+const IntervalType = Interval{Float64}
+
 mutable struct McCormickParamters
   env_max_int::Int
   env_tol::Float64
@@ -9,6 +11,9 @@ mutable struct McCormickParamters
   mv_tol::Float64
   outer_rnding::Bool
   outer_param::Float64
+  reference_point::Vector{Float64}
+  reference_domain::Vector{IntervalType}
+  use_reference::Bool
   McCormickParamters() = new(100,
                              1E-10,
                              0,
@@ -18,11 +23,13 @@ mutable struct McCormickParamters
                              false,
                              1E-15,
                              false,
-                             0.0)
+                             0.0,
+                             Float64[],
+                             IntervalType[],
+                             false)
 end
 
 const MC_param = McCormickParamters()
-const IntervalType = Interval{Float64}
 const IntervalConstr = interval
 const Half64 = Float64(0.5)
 const Two64 = Float64(2.0)

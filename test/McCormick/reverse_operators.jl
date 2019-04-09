@@ -10,241 +10,152 @@ function MC_1_is_equal(y, x, tol)
     return (bool1 && bool2 && bool3 && bool4 && bool5 && bool6)
 end
 
+#=
 a = MC{1}(1.0,EAGO.IntervalType(0.4,3.0),1)
 a1 = MC{1}(-7.0,EAGO.IntervalType(-12.0,-4.0),1)
 b = MC{1}(EAGO.IntervalType(-10.0,-1.0))
 c = MC{1}(2.0,EAGO.IntervalType(1.1,4.5),1)
 aout1, bout1, cout1 = mul_rev(a,b,c)
 aout2, bout2, cout2 = div_rev(a,b,c)
-
-
-a0 = MC{1}(7.0,EAGO.IntervalType(4.5,12.0),1)
-b0 = MC{1}(EAGO.IntervalType(6.0,9.0))
-c0 = MC{1}(5.0,EAGO.IntervalType(4.1,9.5),1)
-aout3, bout3, cout3 = pow_rev(a0,b0,c0)
+=#
 
 #=
-@testset "Reverse Arithmetic Operators" begin
-    tol = 1E-3
-    a = MC{1}(1.0,EAGO.IntervalType(0.4,3.0),1)
+@testset "Reverse Multiplication" begin
+
+    # THE BINARY OPERATOR
+    a = MC{1}(1.0, EAGO.IntervalType(0.4,3.0), 1)
     b = MC{1}(EAGO.IntervalType(-10.0,-1.0))
-    c = MC{1}(2.0,EAGO.IntervalType(1.1,4.5),1)
+    c = MC{1}(2.0, EAGO.IntervalType(1.1,4.5), 1)
 
-    aout, bout, cout = plus_rev(a,b,c)
-    a1_cv_grad = SVector{1,Float64}(1.0)
-    a1_cc_grad = SVector{1,Float64}(1.0)
-    a1 = MC{1}(1.0, 1.0, EAGO.IntervalType(0.4,3.0), a1_cv_grad, a1_cc_grad, false)
-    b1_cv_grad = SVector{1,Float64}(0.0)
-    b1_cc_grad = SVector{1,Float64}(0.0)
-    b1 = MC{1}(-1.0, -1.0, EAGO.IntervalType(-4.1, -1.0), b1_cv_grad, b1_cc_grad, false)
-    c1_cv_grad = SVector{1,Float64}(1.0)
-    c1_cc_grad = SVector{1,Float64}(1.0)
-    c1 = MC{1}(2.0, 2.0, EAGO.IntervalType(1.4, 4.5), c1_cv_grad, c1_cc_grad, false)
-    @test MC_1_is_equal(aout, a1, tol)
-    @test MC_1_is_equal(bout, b1, tol)
-    @test MC_1_is_equal(cout, c1, tol)
+    aout1, bout1, cout1 = mul_rev(a,b,c)
 
-    #aout, bout, cout = plus_rev(a,b,1.0)
-    #@test MC_1_is_equal(a, x, tol)
-    #@test MC_1_is_equal(b, x, tol)
+    @test bout1.Intv.lo == Inf
+    @test bout1.Intv.hi == -Inf
+    @test cout1.Intv.lo == Inf
+    @test cout1.Intv.hi == -Inf
 
+    bout1 = MC{1}(1.0, EAGO.IntervalType(0.4,3.0), 1)
+    cout1 = MC{1}(EAGO.IntervalType(-10.0,-1.0))
+    aout1 = bout1*cout1
 
-    a_alt = MC{1}(-7.0,EAGO.IntervalType(-12.0,-4.0),1)
-    aout1, bout1, cout1 = minus_rev(a, b, c)
-    aout2, bout2, cout2 = minus_rev(a_alt, b, c)
+    aout1_a, bout1_a, cout1_a = mul_rev(aout1, bout1, cout1)
 
-    b1_cv_grad = SVector{1,Float64}(2.0)
-    b1_cc_grad = SVector{1,Float64}(0.0)
-    c1_cv_grad = SVector{1,Float64}(1.0)
-    c1_cc_grad = SVector{1,Float64}(-1.0)
-    a1 = MC{1}(-7.0,EAGO.IntervalType(-12.0,-4.0),1)
-    b1 = MC{1}(3.0, -1.0, EAGO.IntervalType(Inf,-Inf), b1_cv_grad, b1_cc_grad, false)
-    c1 = MC{1}(2.0, -2.0, EAGO.IntervalType(Inf,-Inf), b1_cv_grad, b1_cc_grad, false)
+    MC_1_is_equal(aout1_a, aout1, 0.00001)
+    MC_1_is_equal(bout1_a, bout1, 0.00001)
+    MC_1_is_equal(cout1_a, cout1, 0.00001)
 
-    b1_cv_grad = SVector{1,Float64}(2.0)
-    b1_cc_grad = SVector{1,Float64}(2.0)
-    c1_cv_grad = SVector{1,Float64}(1.0)
-    c1_cc_grad = SVector{1,Float64}(1.0)
-    a2 = MC{1}(-7.0,EAGO.IntervalType(-12.0,-4.0),1)
-    b2 = MC{1}(-5.0, -5.0, EAGO.IntervalType(-10.0, -1.0), b1_cv_grad, b1_cc_grad, false)
-    c2 = MC{1}(2.0, 2.0, EAGO.IntervalType(1.1, 4.5), c1_cv_grad, c1_cc_grad, false)
+    bout2 = MC{1}(1.0, EAGO.IntervalType(0.4,3.0), 1)
+    cout2 = MC{1}(EAGO.IntervalType(-10.0,-1.0))
+    aout2 = 0.3*bout1*cout1+1.0
 
-    @test MC_1_is_equal(aout1, a1, tol)
-    @test MC_1_is_equal(bout1, b1, tol)
-    @test MC_1_is_equal(cout1, c1, tol)
-    @test MC_1_is_equal(aout2, a2, tol)
-    @test MC_1_is_equal(bout2, b2, tol)
-    @test MC_1_is_equal(cout2, c2, tol)
+    aout2_a, bout2_a, cout2_a = mul_rev(aout2, bout2, cout2)
 
-    #minus_rev(a::MC, b::MC)
-    #aout, bout, cout = minus_rev(a,b,c)
-    #minus_rev(a,b)
+    MC_1_is_equal(aout2_a, aout2, 0.00001)
+    MC_1_is_equal(bout2_a, bout2, 0.00001)
+    @test cout2_a.Intv.lo == -10.0
+    @test cout2_a.Intv.hi == -1.0
+    @test cout2_a.cv == -6.32
+    @test cout2_a.cc == -1.0
+    @test cout2_a.cv_grad[1] == -8.38
+    @test cout2_a.cc_grad[1] == 0.0
 
-    aout, bout, cout = mul_rev(a::MC, b::MC, c::MC)
-    a1 = MC{1}()
-    b1 = MC{1}()
-    c1 = MC{1}()
-    @test MC_1_is_equal(aout, a1, tol)
-    @test MC_1_is_equal(bout, b1, tol)
-    @test MC_1_is_equal(cout, c1, tol)
-    mul_rev(a,b,c)
+    # WITH FLOAT
 
-    aout, bout, cout = div_rev(a::MC, b::MC, c::MC)
-    a1 = MC{1}()
-    b1 = MC{1}()
-    c1 = MC{1}()
-    @test MC_1_is_equal(aout, a1, tol)
-    @test MC_1_is_equal(bout, b1, tol)
-    @test MC_1_is_equal(cout, c1, tol)
-    div_rev(a,b,c)
-
-    inv_rev(a::MC, b::MC)
-    inv_rev(a,b)
-
-    aout, bout, cout = pow_rev(a::MC, b::MC, c::MC)
-    a1 = MC{1}()
-    b1 = MC{1}()
-    c1 = MC{1}()
-    @test MC_1_is_equal(aout, a1, tol)
-    @test MC_1_is_equal(bout, b1, tol)
-    @test MC_1_is_equal(cout, c1, tol)
-
-    pow_rev(a, b, c)
-
-    aout, bout = sqrt_rev(a::MC, b::MC)
-
-    sqr_rev(f, x)
-
-    #abs_rev!(a::MC, b::MC)  TO ADD
-    =#
-#end
-#=
-@testset "Reverse Exponential Operators" begin
-
-    tol = 1E-3
-    x = MC{1}()
-    y = MC{1}()
-
-    yout, xout = exp_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = exp2_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = exp10_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = expm1_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = log_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = log2_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = log10_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = log1p_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-end
-
-@testset "Reverse Extrema" begin
-    # max_rev(a::MC, b::MC, c::MC) TODO
-    # max_rev(a,b,c)
-
-    # min_rev(a::MC, b::MC, c::MC) TODO
-    # min_rev(a,b,c)
-end
-
-@testset "Reverse Hyperbolic" begin
-    yout, xout = sinh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = cosh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = tanh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-end
-
-@testset "Reverse Inverse Hyperbolic" begin
-    yout, xout = asinh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = acosh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    yout, xout = atanh_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-end
-
-@testset "Reverse Inverse Hyperbolic" begin
-    asin_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    acos_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-
-    atan_rev(y,x)
-    y1 = MC{1}()
-    x1 = MC{1}()
-    @test MC_1_is_equal(yout, y1, tol)
-    @test MC_1_is_equal(xout, x1, tol)
-end
-
-@testset "Reverse Trignometric" begin
-    #sin_rev(a::MC, b::MC) TODO
-    #cos_rev(a::MC, b::MC) TODO
-    #tan_rev(a::MC, b::MC) TODO
 end
 =#
+
+#=
+@testset "Reverse Addition" begin
+end
+=#
+
+#=
+@testset "Reverse Division" begin
+end
+=#
+
+#=
+@testset "Reverse Subtraction" begin
+end
+=#
+
+#=
+@testset "Reverse Exponential" begin
+    a = MC{1}(1.0,EAGO.IntervalType(0.4,3.0),1)
+    expa = exp(a)*1.1
+    y,x = exp_rev(expa,a)
+
+    @test MC_1_is_equal(expa, y, 0.00001)
+    @test x.cc == 1.0
+    @test x.cv == 1.0
+    @test x.Intv.lo == 0.49531
+    @test x.Intv.hi == 3.0
+    @test x.cc_grad == 1.0
+    @test x.cv_grad == 1.0
+
+    exp2a = exp2(a)*1.1
+    y,x = exp2_rev(exp2a,a)
+
+    @test MC_1_is_equal(exp2a, y, 0.00001)
+    @test x.cc == 1.0
+    @test x.cv == 1.0
+    @test x.Intv.lo == 0.53753
+    @test x.Intv.hi == 3.0
+    @test x.cc_grad == 1.0
+    @test x.cv_grad == 1.0
+
+    exp10a = exp10(a)*1.1
+    y,x = exp10_rev(exp10a,a)
+
+    @test MC_1_is_equal(exp10a, y, 0.00001)
+    @test x.cc == 1.0
+    @test x.cv == 1.0
+    @test x.Intv.lo == 0.441392
+    @test x.Intv.hi == 3.0
+    @test x.cc_grad == 1.0
+    @test x.cv_grad == 1.0
+
+    expm1a = expm1(a)*1.1
+    y,x = expm1_rev(expm1a,a)
+
+    @test MC_1_is_equal(expm1a, y, 0.00001)
+    @test x.cc == 1.0
+    @test x.cv == 1.0
+    @test x.Intv.lo == 0.432436
+    @test x.Intv.hi == 3.0
+    @test x.cc_grad == 1.0
+    @test x.cv_grad == 1.0
+end
+=#
+
+#=
+@testset "Reverse Logarithm" begin
+
+    a = MC{1}(9.6,EAGO.IntervalType(9.4,10.0),1)
+    a1 = MC{1}(1.0,EAGO.IntervalType(0.2,5.0),1)
+    loga = log(a)*5.1
+    y,x = log_rev(loga,a)
+
+    @test x.Intv.lo == Inf
+    @test x.Intv.hi == -Inf
+
+end
+=#
+
+#=
+# BROKEN FLOAT REVERSE
+bout1 = MC{1}(1.0,EAGO.IntervalType(0.4,3.0),1)
+cout1 = -3.0
+aout1 = bout1*cout1
+aout1_a, bout1_a, cout1_a = mul_rev(aout1,bout1,cout1)
+=#
+
+a = MC{1}(9.6,EAGO.IntervalType(9.4,10.0),1)
+a1 = MC{1}(1.0,EAGO.IntervalType(0.2,5.0),1)
+loga = log(a)*5.1
+y,x = log_rev(loga,a)
+
+#a0 = MC{1}(7.0,EAGO.IntervalType(4.5,12.0),1)
+#b0 = MC{1}(EAGO.IntervalType(6.0,9.0))
+#c0 = MC{1}(5.0,EAGO.IntervalType(4.1,9.5),1)
+#aout3, bout3, cout3 = pow_rev(a0,b0,c0)

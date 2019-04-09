@@ -40,6 +40,11 @@ end
 function mc_precondition_1!(h!::Function, hj!::Function, z_mc, aff_mc, p_mc, J, H, Y, xp_mc, flt_param::Vector{Float64}, precond::Bool)
   h!(H, z_mc, xp_mc, p_mc, flt_param)
   hj!(J, aff_mc, xp_mc, p_mc, flt_param)
+  #println("mc_precondition_1! $(J[1].Intv)")
+  #if isapprox(J[1].Intv.lo, 0.244897, atol=1E-3) && isapprox(J[1].Intv.hi, 1.20001, atol=1E-3) #&& MC_param.use_reference
+  #  println("ran some stuff")
+  #  J[1] = MC{1}(J[1].cv, J[1].cc, IntervalType(0.4295,0.84097), J[1].cv_grad, J[1].cc_grad, J[1].cnst)
+  #end
   if precond
     Y[1,1] = mid(J[1,1].Intv)
     H[1] /= Y[1,1]

@@ -4,7 +4,7 @@
 Reverse McCormick operator for `exp`.
 """
 function exp_rev(y::MC, x::MC)
-    y = y ∩ IntervalType(0.0, ∞)
+    y = y ∩ IntervalType(0.0, Inf)
     x = x ∩ log(y)
     y,x
 end
@@ -15,7 +15,7 @@ end
 Reverse McCormick operator for `exp2`.
 """
 function exp2_rev(y::MC, x::MC)
-    y = y ∩ IntervalType(0.0, ∞)
+    y = y ∩ IntervalType(0.0, Inf)
     x = x ∩ log2(y)
     y,x
 end
@@ -26,7 +26,7 @@ end
 Reverse McCormick operator for `exp10`.
 """
 function exp10_rev(y::MC, x::MC)
-    y = y ∩ IntervalType(0.0, ∞)
+    y = y ∩ IntervalType(0.0, Inf)
     x = x ∩ log10(y)
     y,x
 end
@@ -37,7 +37,7 @@ end
 Reverse McCormick operator for `expm1`.
 """
 function expm1_rev(y::MC, x::MC)
-    y = y ∩ IntervalType(-1.0, ∞)
+    y = y ∩ IntervalType(-1.0, Inf)
     x = x ∩ log1p(y)
     y,x
 end

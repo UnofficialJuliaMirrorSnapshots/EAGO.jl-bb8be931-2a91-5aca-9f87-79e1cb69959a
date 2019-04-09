@@ -420,9 +420,9 @@ end
 
 # maximum number to perform reverse operation on associative term by summing and evaluating pairs
 # remaining terms not reversed
-const MAX_ASSOCIATIVE_REVERSE = 5
+const MAX_ASSOCIATIVE_REVERSE = 4
 function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
-                      nd::Vector{JuMP.NodeData}, adj) where T
+                      nd::Vector{JuMP.NodeData}, adj, x_values) where T
 
     @assert length(setstorage) >= length(nd)
     @assert length(numberstorage) >= length(nd)
@@ -625,18 +625,18 @@ function reverse_eval_all(d::Evaluator,x)
         # Cut Objective at upper bound
         ex = d.objective
         ex.setstorage[1] = x.setstorage[1] ∩ IntervalType(-Inf,d.objective_ubd)
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj)
+        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
     end
     for i in 1:length(d.constraints)
         # Cut constraints on constraint bounds & reverse
         ex = d.constraints[i]
         ex.setstorage[1] = x.setstorage[1] ∩ IntervalType(d.constraints_lbd[i], d.constraints_ubd[i])
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj)
+        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
     end
     for k in 1:length(d.subexpression_order)
         ex = d.subexpressions[d.subexpression_order[k]]
         ex.setstorage[1] = subexpression_values_set[d.subexpression_order[k]] # TODO MAKE SURE INDEX ON SUBEXPRESSION_VALUES_SET CORRECT
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj)
+        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
     end
     copyto!(d.last_x,x)
 end
@@ -655,7 +655,7 @@ function forward_reverse_pass(d::Evaluator,x)
             if d.has_reverse
                 for i in d.fw_repeats
                     forward_eval_all(d,x)
-                    #reverse_eval_all(d,x)
+                    reverse_eval_all(d,x)
                     # if node on reverse is same... forward reversing
                     same_box(d.current_node, get_node(d), d.fw_atol) && break
                 end

@@ -8,7 +8,7 @@ println("BEGIN TESTING BRANCH AND BOUND LIBRARY...")
 println("TESTING BRANCH AND BOUND LIBRARY COMPLETE.")
 
 println("BEGIN TESTING NODE ACCESS ROUTINES...")
-#include("node_access.jl")
+#include("node_access.jl")                             # WORKING
 println("TESTING NODE ACCESS ROUTINES COMPLETE.")
 
 println("BEGIN TESTING PARAMETRIC INTERVAL LIBRARY...")
@@ -16,7 +16,7 @@ println("BEGIN TESTING PARAMETRIC INTERVAL LIBRARY...")
 println("TESTING PARAMETRIC INTERVAL LIBRARY COMPLETE.")
 
 println("BEGIN TESTING MCCORMICK LIBRARY...")
-include("McCormick/mccormick.jl")
+include("McCormick/mccormick.jl")                       # WORKING EXCEPT REVERSE
 println("TESTING MCCORMICK LIBRARY COMPLETE.")
 
 println("BEGIN DOMAIN REDUCTION LIBRARY...")

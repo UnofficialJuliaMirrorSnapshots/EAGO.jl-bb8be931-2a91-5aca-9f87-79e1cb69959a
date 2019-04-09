@@ -157,20 +157,17 @@ end
 ##################      CONVERT THROUGH PROMOTION     #########################
 ###############################################################################
 
-function convert(::Type{MC{N}},x::S) where {S<:Integer,N}
-         seed::SVector{N,Float64} = zeros(SVector{N,Float64})
-         MC{N}(convert(Float64,x),convert(Float64,x),IntervalConstr(x),seed,seed,false)
-end
-function convert(::Type{MC{N}},x::S) where {S<:AbstractFloat,N}
-         seed::SVector{N,Float64} = zeros(SVector{N,Float64})
-         MC{N}(convert(Float64,x),convert(Float64,x),IntervalConstr(x),seed,seed,false)
-end
-function convert(::Type{MC{N}},x::S) where {S<:Interval,N}
-         seed::SVector{N,Float64} = zeros(SVector{N,Float64})
-         MC{N}(convert(Float64,x.lo),convert(Float64,x.hi),IntervalConstr(x),seed,seed,false)
-end
-
 promote_rule(::Type{MC{N}}, ::Type{S}) where {S<:Integer,N} = MC{N}
 promote_rule(::Type{MC{N}}, ::Type{S}) where {S<:AbstractFloat,N} = MC{N}
 promote_rule(::Type{MC{N}}, ::Type{S}) where {S<:Interval,N} = MC{N}
 promote_rule(::Type{MC{N}}, ::Type{S}) where {S<:Real,N} = MC{N}
+
+function convert(::Type{MC{N}},x::S) where {S<:Integer,N}
+         MC{N}(IntervalConstr(x))
+end
+function convert(::Type{MC{N}},x::S) where {S<:AbstractFloat,N}
+         MC{N}(IntervalConstr(x))
+end
+function convert(::Type{MC{N}},x::S) where {S<:Interval,N}
+         MC{N}(IntervalType(x.lo,x.hi))
+end

@@ -30,11 +30,14 @@ minus_rev(a,b) = minus_rev(promote(a,b)...)
 Creates reverse McCormick contractor for `a` = `b`*`c`
 """
 function mul_rev(a::MC, b::MC, c::MC)  # a = b * c
+    temp1 = a / b
+    temp2 = a / c
     ((0.0 ∉ a.Intv) ||  (0.0 ∉ b.Intv)) && (c = c ∩ (a / b))
     ((0.0 ∉ a.Intv) ||  (0.0 ∉ c.Intv)) && (b = b ∩ (a / c))
     a,b,c
 end
-#mul_rev(a,b,c) = mul_rev(promote(a,b,c)...)
+mul_rev(a::MC{N},b::MC{N},c::Float64) where N = mul_rev(a,b,MC{N}(c))
+mul_rev(a::MC{N},b::Float64,c::MC{N}) where N = mul_rev(a,MC{N}(b),c)
 
 """
     div_rev

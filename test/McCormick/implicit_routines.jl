@@ -69,6 +69,7 @@
     @test isapprox(fgbnds[2][2].cv_grad[1],1.79288,atol=1E-4)
 end
 
+
 @testset "Test Base Implicit Routines (In-place, Single Step)" begin
     EAGO.set_mc_differentiability!(0)
     mc_opts1 = mc_opts(0.5,1,:Dense,:Newton,1,1,1E-10)
@@ -108,7 +109,7 @@ end
         out[1] = 2.0*z[1]+p[1]
     end
 
-    param = fill(fill(zero(MC{1}), (1,)), (2,))
+    param = fill(zero(MC{1}), (2,))# probably this
 
     gen_expansion_params!(h3!, hj3!, pref_mc, xp_mc, x_mc, xa_mc, xA_mc, z_mc, aff_mc,
                           X, P, mc_opts1, param, H, J, Y, interval_bnds, flt_param, precond)
@@ -172,7 +173,7 @@ end
         out[1] = 2.0*z[1]+p[1]
     end
 
-    param = fill(fill(zero(MC{1}), (1,)), (3,))
+    param = fill(zero(MC{1}), (1,3))
 
     gen_expansion_params!(h3!, hj3!, pref_mc, xp_mc, x_mc, xa_mc, xA_mc, z_mc, aff_mc,
                           X, P, mc_opts1, param, H, J, Y, interval_bnds, flt_param, precond)

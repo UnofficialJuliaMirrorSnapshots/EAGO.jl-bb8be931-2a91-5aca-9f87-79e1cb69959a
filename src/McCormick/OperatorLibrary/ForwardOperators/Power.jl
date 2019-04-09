@@ -511,7 +511,8 @@ function neg_powneg_odd(x::MC{N},c::Integer) where {N}
     gcv2,gdcv2 = cv_negpowneg(x.cc,x.Intv.lo,x.Intv.hi,c)
     cv_grad = max(0.0,gdcv1)*x.cv_grad + min(0.0,gdcv2)*x.cc_grad
     cc_grad = min(0.0,gdcc1)*x.cv_grad + max(0.0,gdcc2)*x.cc_grad
-    return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+		xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+		return affine_intv_contract(xt)
   else
     # calc cc
     if (xL < x.cv)
@@ -529,7 +530,8 @@ function neg_powneg_odd(x::MC{N},c::Integer) where {N}
       cv = xLc
       cv_grad = zero(x.cv_grad)
       cv,cc,cv_grad,cc_grad = cut(xLc,xUc,cv,cc,cv_grad,cc_grad)
-      return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			return affine_intv_contract(xt)
     else
       dcv = (xU^c-xL^c)/(xU-xL) # function decreasing
       if (xU < x.cv)
@@ -543,7 +545,8 @@ function neg_powneg_odd(x::MC{N},c::Integer) where {N}
         cv_grad = zero(x.cv_grad)
       end
       cv,cc,cv_grad,cc_grad = cut(xLc,xUc,cv,cc,cv_grad,cc_grad)
-      return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			return affine_intv_contract(xt)
     end
   end
 end
@@ -605,7 +608,8 @@ function neg_powpos(x::MC{N},c::Integer) where {N}
     end
     cv_grad =(min(0.0,c*x.cc^(c-1)))*x.cc_grad
     cc_grad = m*x.cv_grad
-    return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+    xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+    return affine_intv_contract(xt)
   else
     xcvc = x.cv^c
     xccc = x.cc^c
@@ -625,7 +629,8 @@ function neg_powpos(x::MC{N},c::Integer) where {N}
       cc = xU
       cc_grad = zero(x.cc_grad)
       cv,cc,cv_grad,cc_grad = cut(xUc,xLc,cv,cc,cv_grad,cc_grad)
-      return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+      return affine_intv_contract(xt)
     else
       dcc = (xUc-xLc)/(xU-xL)
       if (xL < x.cv)
@@ -639,7 +644,8 @@ function neg_powpos(x::MC{N},c::Integer) where {N}
         cc_grad = zero(x.cc_grad)
       end
       cv,cc,cv_grad,cc_grad = cut(xUc,xLc,cv,cc,cv_grad,cc_grad)
-      return MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+			xt = MC{N}(cv, cc, x.Intv^c, cv_grad, cc_grad, x.cnst)
+      return affine_intv_contract(xt)
     end
   end
 end

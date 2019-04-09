@@ -66,7 +66,7 @@ function build_nlp_evaluator(S::R,src::T,x::Optimizer) where {R<:Type, T<:MOI.Ab
         d.disable_2ndorder = !in(:cv_hess,fieldnames(eltype(d)))
 
         # Add objective functions, constraints, subexpressions
-        d.has_nlobj = isa(nldata.nlobj, JuMP.NonlinearExprData)
+        d.has_nlobj = isa(nldata.nlobj, JuMP._NonlinearExprData)
         if (src.has_nlobj)
             d.objective = copy_to_function(S,src.objective)
         end

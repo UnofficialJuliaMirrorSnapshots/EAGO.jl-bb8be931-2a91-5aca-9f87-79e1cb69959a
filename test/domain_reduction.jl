@@ -184,7 +184,7 @@ module Check_Domain_Reduction
     end
     =#
 
-    @testset "Optimization-Based Bound Tightening" begin
+    @testset "Optimization-Based Bound Tightening (Linear)" begin
         m = Model(with_optimizer(EAGO.Optimizer))
 
         xL = [-4.0; -2.0]
@@ -220,5 +220,41 @@ module Check_Domain_Reduction
         @test isapprox(n.lower_variable_bounds[2], -1.7, atol = 1E-6)
         @test isapprox(n.upper_variable_bounds[1], 3.729729, atol = 1E-6)
         @test n.upper_variable_bounds[2] == 1.0
+    end
+
+    @testset "Optimization-Based Bound Tightening (Nonlinear)" begin
+        m = Model(with_optimizer(EAGO.Optimizer))
+
+        xL = [0.0; -2.0]
+        xU = [4.0; 4.0]
+
+        @variable(m, xL[i] <= x[i=1:2] <= xU[i])
+
+        @objective(m, Min, x[2] - x[1])
+        @NLconstraint(m, e1, exp(x[1]/3) - x[2] == 0)
+        @NLconstraint(m, e3, x[2] <= 3*log(x[1]+4))
+
+        m.moi_backend.optimizer.model.optimizer.global_lower_bound = Inf
+        m.moi_backend.optimizer.model.optimizer.global_upper_bound = -Inf
+
+        optimize!(m)
+        opt = m.moi_backend.optimizer.model.optimizer
+        m.moi_backend.optimizer.model.optimizer.nonlinear_variable[1] = true
+        m.moi_backend.optimizer.model.optimizer.nonlinear_variable[2] = true
+        m.moi_backend.optimizer.model.optimizer.obbt_variables = [MOI.VariableIndex(1), MOI.VariableIndex(2)]
+        m.moi_backend.optimizer.model.optimizer.global_lower_bound = -10.0
+        m.moi_backend.optimizer.model.optimizer.global_upper_bound = 10.0
+        n = opt.stack[1]
+        n.lower_bound = -10.0
+        n.upper_bound = 10.0
+        feas = EAGO.obbt(opt, n)
+
+        @test feas
+
+        @test n.lower_variable_bounds[1] == 0.0
+        @test isapprox(n.upper_variable_bounds[1], 4.0, atol = 1E-6)
+
+        @test isapprox(n.lower_variable_bounds[2], 0.6492446803515586, atol = 1E-6)
+        @test isapprox(n.upper_variable_bounds[2], 3.7936678946831783, atol = 1E-6)
     end
 end
