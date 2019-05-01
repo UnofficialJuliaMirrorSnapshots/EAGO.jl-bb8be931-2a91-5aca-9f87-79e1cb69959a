@@ -199,7 +199,8 @@ function obbt(x::Optimizer, y::NodeBB)
     if (x.obbt_aggressive_on)
         feasibility = aggressive_filtering!(x, y)
     end
-    xLP = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.obbt_variables)
+    xLP = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
+    println("xLP: $(xLP)")
 
     while ~(isempty(x.obbt_working_lower_index) && isempty(x.obbt_working_upper_index))
 
@@ -247,7 +248,7 @@ function obbt(x::Optimizer, y::NodeBB)
 
             if valid_flag
                 if feasible_flag
-                    xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.obbt_variables)
+                    xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
                     y.lower_variable_bounds[var_ref.value] = is_integer_variable(x,var_ref.value) ? ceil(xLP[var_ref.value]) : xLP[var_ref.value]
                 else
                     feasibility = false
@@ -280,7 +281,7 @@ function obbt(x::Optimizer, y::NodeBB)
 
             if valid_flag
                 if feasible_flag
-                    xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.obbt_variables)
+                    xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
                     y.upper_variable_bounds[var_ref.value] = is_integer_variable(x,var_ref.value) ? ceil(xLP[var_ref.value]) : xLP[var_ref.value]
                 else
                     feasibility = false

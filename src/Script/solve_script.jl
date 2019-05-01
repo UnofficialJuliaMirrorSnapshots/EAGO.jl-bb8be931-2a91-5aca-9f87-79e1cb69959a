@@ -6,14 +6,20 @@ function script_mod(opt::Optimizer,args)
     ng = args[5]; nlobj = args[6]; nlconstr = args[7]; nlexpr = args[8];
     user_operators = args[9]
 
+    println("Eval: $Eval")
+
     lower_eval_block = MOI.NLPBlockData(c_bnds, Eval, has_obj)
     opt.relax_function! = EAGO.relax_model!
     opt.optimization_sense = MOI.MIN_SENSE
+    Eval.has_nlobj = true
+    for i in 1:nx
+        opt.nonlinear_variable[i] = true
+    end
 
     nlconstr_duals = zeros(Float64, ng)
     nlparamvalues = Float64[]
 
-    Eval.m.nlp_data = JuMP.NLPData(nlobj, nlconstr, nlexpr, nlconstr_duals, nlparamvalues,
+    Eval.m.nlp_data = JuMP._NLPData(nlobj, nlconstr, nlexpr, nlconstr_duals, nlparamvalues,
                                    user_operators, nx, Eval)
     #opt.nlp_data = MOI.NLPBlockData(opt.nlp_data.constraint_bounds, Eval, has_obj)
     opt.nlp_data = MOI.NLPBlockData(c_bnds, Eval, has_obj)

@@ -54,7 +54,6 @@ function child_to_parent!(x::Tape)
     x.nd = nd_rev
 
     println("reversed x: $x")
-
     num_valued = Dict{Int,Bool}()
     for i in 1:x.set_trace_count
         num_valued[i] = x.num_valued[x.set_trace_count-i+1]
@@ -66,13 +65,19 @@ function child_to_parent!(x::Tape)
     println("parent_dict: $parent_dict")
 
     # delete disconnected nodes and shift overs as appropriate
+    # labels nodes to be deleted
     to_delete = fill(true,(length(x.nd)))
     keyvals = [k for k in keys(parent_dict)]
     value = [v for v in values(parent_dict)]
     for k in keyvals
         to_delete[k] = false
     end
+    println("to_delete: $to_delete")
 
+    println("GOOD TO HERE")
+
+    # just redo the below section
+    #=
     count_shift = 0
     to_shift = zeros(Int,length(x.nd))
     for i in 1:length(to_shift)
@@ -81,6 +86,8 @@ function child_to_parent!(x::Tape)
         end
         to_shift[i] = count_shift
     end
+    println("to_shift: $to_shift")
+    println("LOOKS VERY WRONG")
 
     keyshift = Dict{Int,Int}()
     valshift = Dict{Int,Int}()
@@ -94,15 +101,27 @@ function child_to_parent!(x::Tape)
         end
     end
 
+    println("keyshift: $(keyshift)")
+    println("valshift: $(valshift)")
+
     cut_dictionary = Dict{Int,Int}()
     for k in keys(parent_dict)
         cut_dictionary[keyshift[k]] = valshift[parent_dict[k]]
     end
 
+    println("cut_dictionary: $(cut_dictionary)")
+    =#
+
+    # Recreates the node list
     nd_list = []
+    count = 1
     for i in 1:length(parent_dict)
-        temp_node = Tracer.NodeData(x.nd[i].nodetype,x.nd[i].index,[cut_dictionary[i]])
-        push!(nd_list, temp_node)
+        if ~to_delete[i]
+            index = x.nd[i].index
+            temp_node = Tracer.NodeData(x.nd[i].nodetype, index, [cut_dictionary[count]])
+            push!(nd_list, temp_node)
+            count += 1
+        end
     end
     x.nd = nd_list
 end
@@ -114,6 +133,10 @@ end
 Take a list of tapes for the i to n components.
 """
 function get_component_tapes(g::Function, ng::Int, nx::Int)
+
+    Nodes = Vector{JuMP.NodeData}[]
+    Values = Vector{Float64}[]
+
     g_plus = x -> g(x) .+ [i for i in 1:ng]
     g_tape = Tracer.trace_script(g, nx);
     gp_tape = Tracer.trace_script(g_plus, nx);
@@ -126,17 +149,19 @@ function get_component_tapes(g::Function, ng::Int, nx::Int)
         position -= 1
     end
 
-    Nodes = Vector{JuMP.NodeData}[]
-    Values = Vector{Float64}[]
+    temp_tape_1 = []
+    temp_tape_2 = []
+
     for i in 1:ng
         tape_i = Tape(g_tape.nd[1:terminal_nodes[i]], g_tape.const_values,
                       g_tape.num_valued, terminal_nodes[i], g_tape.const_count)
+        (i == 1) && (temp_tape_1 = deepcopy(tape_i))
         Tracer.child_to_parent!(tape_i)
+        (i == 1) && (temp_tape_2 = deepcopy(tape_i))
         push!(Nodes, convert.(JuMP.NodeData,tape_i.nd))
         push!(Values, tape_i.const_values)
     end
-
-    return Nodes, Values
+    return Nodes, Values, temp_tape_1, temp_tape_2
 end
 
 function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::Vector{Symbol}, def_nlexpr)
@@ -145,14 +170,14 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
     f_tape = Tracer.trace_script(f,nx)
     Tracer.child_to_parent!(f_tape)
     f_jnd = convert.(JuMP.NodeData, f_tape.nd)
-    nlobj = JuMP.NonlinearExprData(f_jnd, f_tape.const_values); d.has_nlobj = true
+    nlobj = JuMP._NonlinearExprData(f_jnd, f_tape.const_values); d.has_nlobj = true
 
     # get expression graph representation for constraints
-    nlconstr_list = JuMP.NonlinearConstraint[]
+    nlconstr_list = JuMP._NonlinearConstraint[]
     if isa(g, Function)
         gi_nd, gi_values = get_component_tapes(g, ng, nx);
         for i in 1:ng
-            push!(nlconstr_list, JuMP.NonlinearConstraint(JuMP.NonlinearExprData(gi_nd[i], gi_values[i]), -Inf, 0.0))
+            push!(nlconstr_list, JuMP._NonlinearConstraint(JuMP._NonlinearExprData(gi_nd[i], gi_values[i]), -Inf, 0.0))
         end
     end
 
@@ -185,7 +210,7 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
     d.user_output_buffer = Array{Float64}(undef,largest_user_input_dimension)
     d.jac_storage = Array{Float64}(undef,max(nx,largest_user_input_dimension))
 
-    d.constraints = JuMP.FunctionStorage[]
+    d.constraints = JuMP._FunctionStorage[]
     d.last_x = fill(NaN, nx)
 
     d.parameter_values = Float64[]
@@ -212,7 +237,7 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
     d.subexpression_linearity = Array{JuMP.Linearity}(undef,length(def_nlexpr))
     subexpression_variables = Array{Vector{Int}}(undef,length(def_nlexpr))
     subexpression_edgelist = Array{Set{Tuple{Int,Int}}}(undef,length(def_nlexpr))
-    d.subexpressions = Array{JuMP.SubexpressionStorage}(undef,length(def_nlexpr))
+    d.subexpressions = Array{JuMP._SubexpressionStorage}(undef,length(def_nlexpr))
     d.subexpression_forward_values = Array{Float64}(undef,length(d.subexpressions))
     d.subexpression_reverse_values = Array{Float64}(undef,length(d.subexpressions))
 
@@ -220,7 +245,7 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
     empty_edgelist = Set{Tuple{Int,Int}}()
     for k in d.subexpression_order
         d.subexpression_forward_values[k] = NaN
-        d.subexpressions[k] = JuMP.SubexpressionStorage(def_nlexpr[k].nd, def_nlexpr[k].const_values, nx, d.subexpression_linearity, moi_index_to_consecutive_index)
+        d.subexpressions[k] = JuMP._SubexpressionStorage(def_nlexpr[k].nd, def_nlexpr[k].const_values, nx, d.subexpression_linearity, moi_index_to_consecutive_index)
         subex = d.subexpressions[k]
         d.subexpression_linearity[k] = subex.linearity
         if d.want_hess
@@ -244,7 +269,7 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
     max_chunk = 1
 
     nd = main_expressions[1]
-    d.objective = JuMP.FunctionStorage(nd, f_tape.const_values, nx, coloring_storage, d.want_hess, d.subexpressions, individual_order[1], d.subexpression_linearity, subexpression_edgelist, subexpression_variables, moi_index_to_consecutive_index)
+    d.objective = JuMP._FunctionStorage(nd, f_tape.const_values, nx, coloring_storage, d.want_hess, d.subexpressions, individual_order[1], d.subexpression_linearity, subexpression_edgelist, subexpression_variables, moi_index_to_consecutive_index)
     max_expr_length = max(max_expr_length, length(d.objective.nd))
     max_chunk = max(max_chunk, size(d.objective.seed_matrix,2))
 
@@ -252,7 +277,7 @@ function MOI.initialize(d::JuMP.NLPEvaluator, f, g, ng, nx, requested_features::
         nlconstr = nlconstr_list[k]
         idx = (d.has_nlobj) ? k+1 : k
         nd = main_expressions[idx]
-        push!(d.constraints, JuMP.FunctionStorage(nd, nlconstr.terms.const_values, nx, coloring_storage, d.want_hess, d.subexpressions, individual_order[idx], d.subexpression_linearity, subexpression_edgelist, subexpression_variables, moi_index_to_consecutive_index))
+        push!(d.constraints, JuMP._FunctionStorage(nd, nlconstr.terms.const_values, nx, coloring_storage, d.want_hess, d.subexpressions, individual_order[idx], d.subexpression_linearity, subexpression_edgelist, subexpression_variables, moi_index_to_consecutive_index))
         max_expr_length = max(max_expr_length, length(d.constraints[end].nd))
         max_chunk = max(max_chunk, size(d.constraints[end].seed_matrix,2))
     end

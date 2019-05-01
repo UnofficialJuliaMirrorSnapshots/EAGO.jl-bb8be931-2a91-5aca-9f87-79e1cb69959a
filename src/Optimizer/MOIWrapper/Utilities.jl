@@ -98,6 +98,9 @@ end
 
 function label_nonlinear_variables!(m::Optimizer, x)
     # general nonlinear terms
+
+    println("label nonlinear variables x: $x")
+    println("label nonlinear variables x.has_nlobj: $(x.has_nlobj)")
     if ~isa(x, EmptyNLPEvaluator)
         if x.has_nlobj
             if (x.objective.linearity != JuMP._Derivatives.LINEAR) ||

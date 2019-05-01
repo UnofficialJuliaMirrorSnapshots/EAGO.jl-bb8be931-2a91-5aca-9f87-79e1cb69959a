@@ -16,7 +16,7 @@ println("BEGIN TESTING PARAMETRIC INTERVAL LIBRARY...")
 println("TESTING PARAMETRIC INTERVAL LIBRARY COMPLETE.")
 
 println("BEGIN TESTING MCCORMICK LIBRARY...")
-include("McCormick/mccormick.jl")                       # WORKING EXCEPT REVERSE
+#include("McCormick/mccormick.jl")                       # WORKING EXCEPT REVERSE
 println("TESTING MCCORMICK LIBRARY COMPLETE.")
 
 println("BEGIN DOMAIN REDUCTION LIBRARY...")
@@ -32,7 +32,7 @@ println("BEGIN TESTING OPTIMIZER")
 println("END TESTING OPTIMIZER")
 
 println("BEGIN TESTING SCRIPT BRIDGE")
-#include("script_optimizer.jl")
+include("script_optimizer.jl")
 println("END TESTING SCRIPT BRIDGE")
 
 println("BEGIN TESTING SIP SOLVER")

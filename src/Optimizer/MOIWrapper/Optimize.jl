@@ -71,9 +71,6 @@ function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_arg
         end
     end
 
-    println("NewVariableSize: $(NewVariableSize)")
-    println("m.obbt_variables: $(m.obbt_variables)")
-
     # Sets up relaxations terms that don't vary during iterations (mainly linear)
     m.lower_variables = MOI.VariableIndex.(1:m.variable_number)
 

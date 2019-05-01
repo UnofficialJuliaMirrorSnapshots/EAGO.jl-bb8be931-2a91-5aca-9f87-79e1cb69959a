@@ -18,12 +18,6 @@ JuMP.set_upper_bound(x[2], 4.0)
 
 JuMP.optimize!(m)
 
-jbackend_debug = JuMP.backend(m).optimizer.model.optimizer.Debug1
-jbackend_eval = JuMP.backend(m).optimizer.model.optimizer.Debug1.evaluator.m.nlp_data
-jackend_nlobj = jbackend_eval.nlobj
-jackend_nlconstr = jbackend_eval.nlconstr
-jackend_nlexpr = jbackend_eval.nlexpr
-jackend_nlparamvalues = jbackend_eval.nlparamvalues
 #jackend_eval_obj = jbackend_eval.objective
 #jackend_eval_obj = jbackend_eval.constraints
 

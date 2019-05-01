@@ -35,8 +35,8 @@ function default_lower_bounding!(x::Optimizer,y::NodeBB)
     solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
 
     # specifies node used in last problem
-    x.working_evaluator_block.evaluator.last_node = y
-    x.working_evaluator_block.evaluator.objective_ubd = x.global_upper_bound
+    # x.working_evaluator_block.evaluator.last_node = y
+    # x.working_evaluator_block.evaluator.objective_ubd = x.global_upper_bound
 
     if valid_flag
         if feasible_flag
