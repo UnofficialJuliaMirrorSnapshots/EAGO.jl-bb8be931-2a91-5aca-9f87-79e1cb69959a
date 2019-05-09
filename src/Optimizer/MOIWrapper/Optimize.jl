@@ -47,6 +47,10 @@ function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_arg
     num_nlp_constraints > 0 && push!(init_feat, :Jac)
     MOI.initialize(evaluator,init_feat)
 
+    # eliminate redundant expressions & flatten
+    dag_cse_simplify!(evaluator)
+    dag_flattening!(evaluator)
+
     ###### OBBT Setup #####
     # Label fixed variables:
     lbd = -Inf

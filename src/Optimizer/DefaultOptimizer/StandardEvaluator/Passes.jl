@@ -57,6 +57,8 @@ end
 
 const PRINT_EVAL = false
 
+# Setstorage to ... intervaltype storage, 2 float64 storage, 2 float65 matrices, flag storage
+
 function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, numvalued::Vector{Bool},
                       nd::AbstractVector{JuMP.NodeData}, adj, const_values, parameter_values, current_node::NodeBB,
                       x_values::Vector{Float64}, subexpr_values_flt, subexpr_values_set, subexpression_isnum::Vector{Bool}, user_input_buffer;
@@ -266,9 +268,9 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                     @inbounds chdset = numvalued[ix]
                     isnum &= chdset
                     if chdset
-                        @inbounds f_input[r] = setstorage[ix]
-                    else
                         @inbounds f_input[r] = numberstorage[ix]
+                    else
+                        @inbounds f_input[r] = setstorage[ix]
                     end
                     r += 1
                 end

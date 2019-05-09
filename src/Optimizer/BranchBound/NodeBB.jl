@@ -8,7 +8,7 @@ Stores information associated with each node in Branch & Bound tree.
 - `upper_bound::Float64`: Upper bound of problem solution on nodeBB
 - `depth::Int`: Depth of node in B&B tree.
 - `last_branch::Int`: Last dimension branched on.
-- `branch_direction::Bool`: For future use with branching heurestics.
+- `branch_direction::Bool`: For future use with branching heurestics (false if nlp solve not in box, true otherwise).
 """
 mutable struct NodeBB
     lower_variable_bounds::Vector{Float64}
@@ -63,7 +63,7 @@ NodeHistory() = NodeHistory(0,0,Dict{Int,Float64}(0 => -Inf),
 NodeBB(x::NodeBB) = NodeBB(x.lower_variable_bounds, x.upper_variable_bounds,
               x.lower_bound, x.upper_bound, x.depth, x.last_branch,
               x.branch_direction)
-              
+
 function copy(x::NodeBB)
     return NodeBB(x.lower_variable_bounds, x.upper_variable_bounds,
                   x.lower_bound, x.upper_bound, x.depth, x.last_branch,

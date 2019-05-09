@@ -23,20 +23,13 @@ function default_lower_bounding!(x::Optimizer,y::NodeBB)
     x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, load = false)
 
     # Optimizes the object
-    tt = stdout
-    redirect_stdout()
     MOI.optimize!(x.working_relaxed_optimizer)
-    redirect_stdout(tt)
 
     # Process output info and save to CurrentUpperInfo object
     termination_status = MOI.get(x.working_relaxed_optimizer, MOI.TerminationStatus())
     result_status_code = MOI.get(x.working_relaxed_optimizer, MOI.PrimalStatus())
     valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
     solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
-
-    # specifies node used in last problem
-    # x.working_evaluator_block.evaluator.last_node = y
-    # x.working_evaluator_block.evaluator.objective_ubd = x.global_upper_bound
 
     if valid_flag
         if feasible_flag

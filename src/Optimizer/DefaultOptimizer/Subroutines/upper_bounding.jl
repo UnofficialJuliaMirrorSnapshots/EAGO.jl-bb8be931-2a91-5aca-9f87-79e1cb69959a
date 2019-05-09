@@ -1,3 +1,11 @@
+# is root node? is at iteration number? did last bound improve? did last bound land in current domain? can omit is_integer_feasible(x) since still an NLP solver
+function default_nlp_heurestic(x::Optimizer, y::NodeBB)
+    bool = false
+    bool |= (y.depth <= x.upper_bounding_depth)
+    bool |= (~y.branch_direction & (rand() < 0.5^(y.depth-x.upper_bounding_depth)))   # last attempt improved and no solution has been found in y
+    return bool
+end
+
 """
     default_upper_bounding!
 
@@ -5,8 +13,7 @@ Constructs and solves the problem locally on on node `y` and saves upper
 bounding info to `x.current_upper_info`.
 """
 function default_upper_bounding!(x::Optimizer,y::NodeBB)
-    #println("start upper bound")
-    if is_integer_feasible(x) #&& mod(x.CurrentIterationCount,x.UpperBoundingInterval) == 1
+    if default_nlp_heurestic(x,y)
         if x.use_upper_factory
             factory = x.upper_factory()
             x.initial_upper_optimizer = factory
@@ -25,11 +32,7 @@ function default_upper_bounding!(x::Optimizer,y::NodeBB)
         end
 
         # Optimizes the object
-        TT = stdout
-        redirect_stdout()
-        x.debug1 = x.working_upper_optimizer
         MOI.optimize!(x.working_upper_optimizer)
-        redirect_stdout(TT)
 
         # Process output info and save to CurrentUpperInfo object
         termination_status = MOI.get(x.working_upper_optimizer, MOI.TerminationStatus())
@@ -41,7 +44,6 @@ function default_upper_bounding!(x::Optimizer,y::NodeBB)
             mult = (x.optimization_sense == MOI.MIN_SENSE) ? 1.0 : -1.0
             x.current_upper_info.value = mult*MOI.get(x.working_upper_optimizer, MOI.ObjectiveValue())
             x.current_upper_info.solution[1:end] = MOI.get(x.working_upper_optimizer, MOI.VariablePrimal(), x.upper_variables)
-
         else
             x.current_upper_info.feasibility = false
             x.current_upper_info.value = Inf
@@ -50,5 +52,4 @@ function default_upper_bounding!(x::Optimizer,y::NodeBB)
         x.current_upper_info.feasibility = false
         x.current_upper_info.value = Inf
     end
-    #println("finish upper bound")
 end

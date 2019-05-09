@@ -14,7 +14,10 @@ function continuous_relative_bisect(B::Optimizer,S::NodeBB)
       end
     end
   end
-  N1::IntervalType, N2::IntervalType = bisect(IntervalType(S.lower_variable_bounds[Pos],S.upper_variable_bounds[Pos]))
+  branch_pnt::Float64 = B.mid_cvx_factor*B.current_lower_info.solution[Pos] + (1.0-B.mid_cvx_factor)*(S.lower_variable_bounds[Pos]+S.upper_variable_bounds[Pos])/2.0
+  N1::IntervalType = IntervalType(S.lower_variable_bounds[Pos], branch_pnt)
+  N2::IntervalType = IntervalType(branch_pnt, S.upper_variable_bounds[Pos])
+  #N2::IntervalType = bisect(IntervalType(S.lower_variable_bounds[Pos], S.upper_variable_bounds[Pos]), branch_pnt)
   S.lower_bound = max(S.lower_bound, B.current_lower_info.value)
   S.upper_bound = min(S.upper_bound, B.current_upper_info.value)
   X1 = NodeBB(S.lower_variable_bounds, S.upper_variable_bounds,

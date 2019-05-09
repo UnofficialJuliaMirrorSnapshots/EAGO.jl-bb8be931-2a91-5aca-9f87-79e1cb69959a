@@ -192,10 +192,15 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     repetition_volume_tolerance::Float64
 
     # Upper bounding nodes skipped
-    upper_bounding_interval::Int
+    upper_bounding_interval::Int #Not used
+    upper_bounding_depth::Int
+    upper_bnd_ni_cnt::Int  #Not used
+    upper_bnd_ni_tol::Int  #Not used
+    upper_bnd_this_int::Bool  #Not used
 
     # Cutting Plane Options
     cut_iterations::Int
+    mid_cvx_factor::Float64
 
     # Status flags
     first_relaxed::Bool
@@ -233,10 +238,10 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:global_upper_bound] = Inf
 
         # Output specification fields
-        default_opt_dict[:verbosity] = 4
+        default_opt_dict[:verbosity] = 1
         default_opt_dict[:warm_start] = false
-        default_opt_dict[:output_iterations] = 1
-        default_opt_dict[:header_iterations] = 20
+        default_opt_dict[:output_iterations] = 100
+        default_opt_dict[:header_iterations] = 1000
         default_opt_dict[:digits_displayed] = 3
         default_opt_dict[:return_history] = false
         default_opt_dict[:flag_subsolver_errors] = true
@@ -246,7 +251,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:dbbt_tolerance] = 1E-8
 
         # Optimality-based bound tightening parameters
-        default_opt_dict[:obbt_depth] = 3
+        default_opt_dict[:obbt_depth] = 0
         default_opt_dict[:obbt_aggressive_on] = false
         default_opt_dict[:obbt_aggressive_max_iteration] = 2
         default_opt_dict[:obbt_aggressive_min_dimension] = 2
@@ -254,13 +259,13 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:obbt_reptitions] = 2
 
         # Feasibility-Based Bound Tightening Options
-        default_opt_dict[:cp_depth] = 10
+        default_opt_dict[:cp_depth] = 0
         default_opt_dict[:cp_reptitions] = 10
         default_opt_dict[:evaluation_reptitions] = 1
         default_opt_dict[:evaluation_reverse] = false
 
         # Feasibility-Based Bound Tightening for Quadratics
-        default_opt_dict[:univariate_quadratic_depth] = 1000
+        default_opt_dict[:univariate_quadratic_depth] = 0
         default_opt_dict[:univariate_quadratic_reptitions] = 2
         default_opt_dict[:bivariate_quadratic_depth] = 1000
         default_opt_dict[:bivariate_quadratic_reptitions] = 2
@@ -274,16 +279,20 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:poor_man_lp_reptitions] = 1
 
         # Upper Bounding Interval
-        default_opt_dict[:upper_bounding_interval] = 1
+        default_opt_dict[:upper_bounding_interval] = 100
+        default_opt_dict[:upper_bounding_depth] = 2
+        default_opt_dict[:upper_bnd_ni_tol] = 3
 
         # Termination Limits
-        default_opt_dict[:iteration_limit] = 10000 #Int(1E6)
+        default_opt_dict[:iteration_limit] = 100000 #Int(1E6)
         default_opt_dict[:node_limit] = Int(1E6)
-        default_opt_dict[:absolute_tolerance] = 1E-5
-        default_opt_dict[:relative_tolerance] = 1E-5
+        default_opt_dict[:absolute_tolerance] = 1E-3
+        default_opt_dict[:relative_tolerance] = 1E-3
         default_opt_dict[:exhaustive_search] = false
         default_opt_dict[:first_relaxed] = false
         default_opt_dict[:upper_has_node] = false
+
+        default_opt_dict[:mid_cvx_factor] = 0.25
 
         for i in keys(default_opt_dict)
             if (haskey(options,i))
@@ -309,15 +318,16 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
             # a small number of feasible iterations, or fail after a few
             # iterations. Scales ipopt tolerance to overall tolerance.
             if haskey(options, :absolute_tolerance)
-                upper_options[:tol] = options[:absolute_tolerance]/30.0
+                upper_options[:tol] = options[:absolute_tolerance]/100.0
             else
-                upper_options[:tol] = default_opt_dict[:absolute_tolerance]/30.0
+                upper_options[:tol] = default_opt_dict[:absolute_tolerance]/100.0
             end
-            upper_options[:constr_viol_tol] = 0.0001
-            upper_options[:max_iter] = 100
+            upper_options[:constr_viol_tol] = 0.00001
+            upper_options[:max_iter] = 1000
             upper_options[:acceptable_tol] = 1E30
-            upper_options[:acceptable_iter] = 3
-            upper_options[:acceptable_constr_viol_tol] = 0.00001
+            upper_options[:acceptable_iter] = 100
+            upper_options[:acceptable_constr_viol_tol] = 0.0000001
+            upper_options[:print_level] = 0
         end
         m.upper_optimizer_options = upper_options
         m.upper_factory = JuMP.OptimizerFactory(DummyOptimizer(),(),upper_options)
@@ -415,6 +425,10 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         m.obbt_variables = MOI.VariableIndex[]
         m.obbt_working_lower_index = MOI.VariableIndex[]
         m.obbt_working_upper_index = MOI.VariableIndex[]
+
+        # NLP Upper Bound Heurestics
+        m.upper_bnd_ni_cnt = 0
+        m.upper_bnd_this_int = false
 
         return m
     end

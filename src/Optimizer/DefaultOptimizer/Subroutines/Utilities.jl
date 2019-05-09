@@ -289,12 +289,12 @@ function set_to_default!(m::Optimizer)
     #isa(m.working_relaxed_optimizer, DummyOptimizer) && (m.working_relaxed_optimizer = CPLEX.Optimizer())
     isa(m.initial_upper_optimizer, DummyOptimizer) && (m.initial_upper_optimizer = Ipopt.Optimizer())
     if isa(m.lower_factory.constructor, DummyOptimizer)
-        m.lower_factory = JuMP.with_optimizer(GLPK.Optimizer)
+        m.lower_factory = JuMP.with_optimizer(GLPK.Optimizer; m.lower_optimizer_options...)
         #m.lower_factory = JuMP.with_optimizer(Clp.Optimizer)
         m.use_lower_factory = true
     end
     if isa(m.upper_factory.constructor, DummyOptimizer)
-        m.upper_factory = JuMP.with_optimizer(Ipopt.Optimizer)
+        m.upper_factory = JuMP.with_optimizer(Ipopt.Optimizer; m.upper_optimizer_options...)
         m.use_upper_factory = true
     end
     isa(m.working_upper_optimizer, DummyOptimizer) && (m.working_upper_optimizer = Ipopt.Optimizer())

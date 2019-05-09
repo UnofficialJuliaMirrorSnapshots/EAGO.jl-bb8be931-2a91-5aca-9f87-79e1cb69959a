@@ -3,12 +3,6 @@ for opMC in (:log, :log2, :log10, :log1p, :acosh, :sqrt)
    # get derivative of midcc for nonsmooth McCormick
    dop = DiffRules.diffrule(:Base, opMC, :midcc) # Replace with cv ruleset
 
-   monotone = :increasing
-   if monotone == :increasing
-         eps_min = :(lo(xIntv))
-         eps_max = :(hi(xIntv))
-   end
-
    # creates expression for nonsmooth McCormick operator
    MC_exp = quote
               xIntv = ($opMC)(Intv(x))
@@ -16,8 +10,8 @@ for opMC in (:log, :log2, :log10, :log1p, :acosh, :sqrt)
               xU = hi(x)
               xLc = lo(xIntv)
               xUc = hi(xIntv)
-              midcc,cc_id = mid3(cc(x),cv(x),$eps_max)
-              midcv,cv_id = mid3(cc(x),cv(x),$eps_min)
+              midcc,cc_id = mid3(cc(x),cv(x),xU)
+              midcv,cv_id = mid3(cc(x),cv(x),xL)
               dcv = (xUc > xLc) ? (xUc-xLc)/(xU-xL) : 0.0
               convex = dcv*(midcv-xL)+ xLc
               concave = ($opMC)(midcc)
@@ -34,8 +28,8 @@ for opMC in (:log, :log2, :log10, :log1p, :acosh, :sqrt)
                xU = hi(x)
                xLc = lo(xIntv)
                xUc = hi(xIntv)
-               midcc,cc_id = mid3(cc(x),cv(x),$eps_max)
-               midcv,cv_id = mid3(cc(x),cv(x),$eps_min)
+               midcc,cc_id = mid3(cc(x),cv(x),xU)
+               midcv,cv_id = mid3(cc(x),cv(x),xL)
                dcv = (xUc > xLc) ? (hi(xIntv)-lo(xIntv))/(xU-xL) : 0.0
                if (x2-x1) == 0.0
                   convex = xLc

@@ -5,7 +5,7 @@ using StaticArrays, CommonSubexpressions, DiffRules, BenchmarkTools, LinearAlgeb
 import Base: +, -, *, /, convert, in, isempty, one, zero, real, eps, max, min,
              abs, inv, exp, exp2, exp10, expm1, log, log2, log10, log1p, acosh,
              sqrt, sin, cos, tan, min, max, sec, csc, cot, ^, step, sign, intersect,
-             promote_rule
+             promote_rule, asinh, atanh, tanh
 
 import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
                            one, zero, real, eps, max, min, abs, exp,
@@ -18,8 +18,8 @@ import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
 export MC, cc, cv, Intv, lo, hi,  cc_grad, cv_grad, cnst, +, -, *, /, convert,
        one, zero, dist, real, eps, mid, exp, exp2, exp10, expm1, log, log2,
        log10, log1p, acosh, sqrt, sin, cos, tan, min, max, sec, csc, cot, ^,
-       abs, step, sign, pow, in, isempty, intersect, length
-       #acos, asin, atan, sinh, cosh, tanh, asinh, atanh, inv, sqr
+       abs, step, sign, pow, in, isempty, intersect, length,
+       acos, asin, atan, sinh, cosh, tanh, asinh, atanh, inv, sqr
 
 # Export inplace operators
 export plus!, mult!, min!, max!, minus!, div!, exp!, exp2!, exp10!, expm1!,

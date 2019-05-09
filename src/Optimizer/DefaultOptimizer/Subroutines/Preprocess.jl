@@ -6,7 +6,7 @@ specified in `EAGO.Optimizer` object.
 """
 function default_preprocess!(x::Optimizer,y::NodeBB)
 
-    println("start preprocess")
+    #println("start preprocess")
     # Sets initial feasibility
     feas = true; rept = 0
 
@@ -17,7 +17,7 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
             (~feas) && (break)
         end
     end
-    println("finished poor man lp")
+    #println("finished poor man lp")
 
     # runs univariate quadratic contractor
     if ((x.univariate_quadratic_depth > x.current_iteration_count) && feas)
@@ -26,7 +26,7 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
             (~feas) && (break)
         end
     end
-    println("finished quadratic univ")
+    #println("finished quadratic univ")
 
     if ((x.obbt_depth > x.current_iteration_count) && feas)
         for i in 1:x.obbt_reptitions
@@ -34,7 +34,7 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
             (~feas) && (break)
         end
     end
-    println("obbt")
+    #println("obbt")
 
     #=
     if ((x.cp_depth > x.current_iteration_count) && feas)
@@ -45,5 +45,5 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
     end
     =#
     x.current_preprocess_info.feasibility = feas
-    println("end preprocess")
+    #println("end preprocess")
 end

@@ -71,9 +71,6 @@ function /(x::MC{N},y::MC{N}) where N
 		return SMCg{T}(cc,cv,cc_grad,cv_grad,Intv,cnst,x.IntvBox,x.xref)
 	=#
 	else
-		println("inv(y): $(inv(y))")
-		println("x: $x")
-		println("x*inv(y): $(x*inv(y))")
 		return x*inv(y)
 	end
 end

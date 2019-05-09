@@ -209,14 +209,15 @@ end
 
 deg2rad(x::MC) = DegToRadIntv*x
 
-sec(x::MC)= inv(sin(x))
-csc(x::MC)= inv(cos(x))
+sec(x::MC)= inv(cos(x))
+csc(x::MC)= inv(sin(x))
 cot(x::MC)= inv(tan(x))
 
 asec(x::MC) = acos(inv(x))
 acsc(x::MC) = asin(inv(x))
 acot(x::MC) = atan(inv(x))
 
+sech(x::MC) = inv(cosh(x))
 csch(x::MC) = inv(sinh(x))
 coth(x::MC) = inv(tanh(x))
 
