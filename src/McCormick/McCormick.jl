@@ -3,23 +3,37 @@
 using StaticArrays, CommonSubexpressions, DiffRules, BenchmarkTools, LinearAlgebra
 
 import Base: +, -, *, /, convert, in, isempty, one, zero, real, eps, max, min,
-             abs, inv, exp, exp2, exp10, expm1, log, log2, log10, log1p, acosh,
+             abs, inv, exp, exp2, exp10, expm1, log, log2, log10, log1p, acosh, sech,
+             csch, coth, acsch, acoth, asech,
              sqrt, sin, cos, tan, min, max, sec, csc, cot, ^, step, sign, intersect,
-             promote_rule, asinh, atanh, tanh
+             promote_rule, asinh, atanh, tanh, atan, asin, cosh, acos,
+             sind, cosd, tand, asind, acosd, atand,
+             secd, cscd, cotd, asecd, acscd, acotd
 
 import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
                            one, zero, real, eps, max, min, abs, exp,
                            expm1, log, log2, log10, log1p, sqrt, ^,
-                           sin, cos, tan, min, max, sec, csc, cot, step,
+                           sin, cos, tan, min, max, sec, csc, cot, step, tanh, sech,
+                           csch, coth, acsch, acoth, asech,
                            sign, dist, mid, pow, Interval, interval, sinh, cosh,
-                           ∩, IntervalBox, pi_interval, bisect, isdisjoint, length
+                           ∩, IntervalBox, pi_interval, bisect, isdisjoint, length,
+                           atan, asin, acos,
+                           sind, cosd, tand, asind, acosd, atand,
+                           secd, cscd, cotd, asecd, acscd, acotd
+
+import Base.MathConstants.golden
 
 # Export forward operators
 export MC, cc, cv, Intv, lo, hi,  cc_grad, cv_grad, cnst, +, -, *, /, convert,
        one, zero, dist, real, eps, mid, exp, exp2, exp10, expm1, log, log2,
        log10, log1p, acosh, sqrt, sin, cos, tan, min, max, sec, csc, cot, ^,
        abs, step, sign, pow, in, isempty, intersect, length,
-       acos, asin, atan, sinh, cosh, tanh, asinh, atanh, inv, sqr
+       acos, asin, atan, sinh, cosh, tanh, asinh, atanh, inv, sqr, sech,
+       csch, coth, acsch, acoth, asech,
+       sind, cosd, tand, asind, acosd, atand,
+       sinhd, coshd, tanhd, asinhd, acoshd, atanhd,
+       secd, cscd, cotd, asecd, acscd, acotd,
+       secdh, cschd, cothd, asechd, acschd, acothd
 
 # Export inplace operators
 export plus!, mult!, min!, max!, minus!, div!, exp!, exp2!, exp10!, expm1!,

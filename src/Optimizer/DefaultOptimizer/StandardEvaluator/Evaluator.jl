@@ -115,6 +115,7 @@ include("univariate.jl")
 include("passes.jl")
 include("get_info.jl")
 include("load.jl")
+#include("match.jl")
 
 num_state_variables(x::Evaluator) = 0
 num_decision_variables(x::Evaluator) = x.variable_number

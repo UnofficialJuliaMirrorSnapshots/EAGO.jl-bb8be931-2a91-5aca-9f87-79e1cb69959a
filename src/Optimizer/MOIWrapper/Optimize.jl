@@ -48,8 +48,8 @@ function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_arg
     MOI.initialize(evaluator,init_feat)
 
     # eliminate redundant expressions & flatten
-    dag_cse_simplify!(evaluator)
-    dag_flattening!(evaluator)
+    #dag_cse_simplify!(evaluator)
+    #dag_flattening!(evaluator)
 
     ###### OBBT Setup #####
     # Label fixed variables:

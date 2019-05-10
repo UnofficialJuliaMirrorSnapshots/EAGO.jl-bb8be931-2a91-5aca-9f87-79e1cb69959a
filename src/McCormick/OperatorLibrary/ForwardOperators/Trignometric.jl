@@ -40,12 +40,9 @@ function cv_cosin(x,xL,xU)
     x0 = xL
     xm = xU
   end
-  try
-    xj = newton(x0,xL,xU,cv_cosenv,dcv_cosenv,xm,0.0)
-  catch e
-    if isa(e, ErrorException)
+  xj,flag = newton(x0,xL,xU,cv_cosenv,dcv_cosenv,xm,0.0)
+  if flag
       xj = golden_section(xL,xU,cv_cosenv,xm,0.0)
-    end
   end
   if ((left && x<=xj)||((~left) && x>=xj))
     return cos(x),-sin(x)
@@ -141,12 +138,9 @@ function cv_tan(x,xL,xU)
   elseif (xU<=0.0)
     return line_seg(x,xL,tan(xL),xU,tan(xU)),dline_seg(x,xL,tan(xL),xU,tan(xU),sec(x)^2)
   else
-    try
-      p = secant(0.0,xU,0.0,xU,tan_env,xL,0.0)
-    catch e
-      if isa(e, ErrorException)
+    p,flag = secant(0.0,xU,0.0,xU,tan_env,xL,0.0)
+    if flag
         p = golden_section(0.0,xU,tan_env,xL,0.0)
-      end
     end
     if (x<=p)
       return line_seg(x,xL,tan(xL),p,tan(p)),dline_seg(x,xL,tan(xL),p,tan(p),sec(x)^2)
@@ -163,12 +157,9 @@ function cc_tan(x,xL,xU)
   elseif (xU<=0.0)
     return tan(x),sec(x)^2
   else
-    try
-      p = secant(0.0,xL,xL,0.0,tan_env,xU,0.0)
-    catch e
-      if isa(e, ErrorException)
-        p = golden_section(xL,0.0,tan_env,xU,0.0)
-      end
+    p,flag = secant(0.0,xL,xL,0.0,tan_env,xU,0.0)
+    if flag
+      p = golden_section(xL,0.0,tan_env,xU,0.0)
     end
     if (x<=p)
        return tan(x),sec(x)^2
@@ -183,10 +174,8 @@ function tan(x::MC{N}) where N
   xU = x.Intv.hi
   xLc = Intv.lo
   xUc = Intv.hi
-  eps_max = x.Intv.hi
-  eps_min = x.Intv.lo
-  midcc,cc_id = mid3(x.cc,x.cv,eps_max)
-  midcv,cv_id = mid3(x.cc,x.cv,eps_min)
+  midcc,cc_id = mid3(x.cc,x.cv,xU)
+  midcv,cv_id = mid3(x.cc,x.cv,xL)
   cc,dcc = cc_tan(midcc,x.Intv.lo,x.Intv.hi)
   cv,dcv = cv_tan(midcv,x.Intv.lo,x.Intv.hi)
   if ((Intv.lo==-Inf)||(Intv.hi==Inf))
@@ -207,7 +196,210 @@ function tan(x::MC{N}) where N
   return MC{N}(cv, cc, Intv, cv_grad, cc_grad, x.cnst)
 end
 
-deg2rad(x::MC) = DegToRadIntv*x
+######
+
+acos_env(x::Float64, y::Float64, z::Float64) = -(acos(x) - acos(y))*sqrt(1-x^2) - x + y
+function cv_acos(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return acos(x), -1.0/sqrt(1.0-x^2)
+  elseif (xU <= 0.0)
+    return line_seg(x, xL, acos(xL), xU, acos(xU)), dline_seg(x, xL, acos(xL), xU, acos(xU), -1.0/sqrt(1.0-x^2))
+  else
+    p,flag = secant(0.0, xU, 0.0, xU, acos_env, xL, 0.0)
+    if flag
+      p = golden_section(0.0, xU, acos_env, xL, 0.0)
+    end
+    if (x <= p)
+       return line_seg(x, xL, acos(xL), p, acos(p)), dline_seg(x, xL, acos(xL), p, acos(p), -1.0/sqrt(1.0-x^2))
+    else
+       return acos(x), -1.0/sqrt(1.0-x^2)
+    end
+  end
+end
+function cc_acos(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return line_seg(x, xL, acos(xL), xU, acos(xU)), dline_seg(x, xL, acos(xL), xU, acos(xU), -1.0/sqrt(1.0-x^2))
+  elseif (xU <= 0.0)
+    return acos(x), -1.0/sqrt(1.0-x^2)
+  else
+    p,flag = secant(xL, 0.0, xL, 0.0, acos_env, xU, 0.0)
+    if flag
+        p = golden_section(xL, 0.0, acos_env, xU, 0.0)
+    end
+    if (x <= p)
+      return acos(x), -1.0/sqrt(1.0-x^2)
+    else
+      return line_seg(x, p, acos(p), xU, acos(xU)), dline_seg(x, p, acos(p), xU, acos(xU), -1.0/sqrt(1.0-x^2))
+    end
+  end
+end
+function acos(x::MC{N}) where N
+  Intv = acos(x.Intv)
+  xL = x.Intv.lo
+  xU = x.Intv.hi
+  xLc = Intv.lo
+  xUc = Intv.hi
+  midcc,cc_id = mid3(x.cc,x.cv,xU)
+  midcv,cv_id = mid3(x.cc,x.cv,xL)
+  cc,dcc = cc_acos(midcc,x.Intv.lo,x.Intv.hi)
+  cv,dcv = cv_acos(midcv,x.Intv.lo,x.Intv.hi)
+  if ((Intv.lo==-Inf)||(Intv.hi==Inf))
+    error("Function unbounded on domain")
+  end
+  if (MC_param.mu >= 1)
+    gcc1,gdcc1 = cc_acos(x.cv,x.Intv.lo,x.Intv.hi)
+    gcv1,gdcv1 = cv_acos(x.cv,x.Intv.lo,x.Intv.hi)
+    gcc2,gdcc2 = cc_acos(x.cc,x.Intv.lo,x.Intv.hi)
+    gcv2,gdcv2 = cv_acos(x.cc,x.Intv.lo,x.Intv.hi)
+    cv_grad = max(0.0,gdcv1)*x.cv_grad + min(0.0,gdcv2)*x.cc_grad
+    cc_grad = min(0.0,gdcc1)*x.cv_grad + max(0.0,gdcc2)*x.cc_grad
+  else
+    cc_grad = mid_grad(x.cc_grad, x.cv_grad, cc_id)*dcc
+    cv_grad = mid_grad(x.cc_grad, x.cv_grad, cv_id)*dcv
+    cv,cc,cv_grad,cc_grad = cut(xLc,xUc,cv,cc,cv_grad,cc_grad)
+  end
+  return MC{N}(cv, cc, Intv, cv_grad, cc_grad, x.cnst)
+end
+
+######
+
+asin_env(x::Float64, y::Float64, z::Float64) = (asin(x) - asin(y))*sqrt(1-x^2) - x + y
+function cv_asin(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return asin(x), 1.0/sqrt(1.0-x^2)
+  elseif (xU <= 0.0)
+    return line_seg(x, xL, asin(xL), xU, asin(xU)), dline_seg(x, xL, asin(xL), xU, asin(xU), 1.0/sqrt(1.0-x^2))
+  else
+    p,flag = secant(0.0, xU, 0.0, xU, asin_env, xL, 0.0)
+    if flag
+      p = golden_section(0.0, xU, asin_env, xL, 0.0)
+    end
+    if (x <= p)
+       return line_seg(x, xL, asin(xL), p, asin(p)), dline_seg(x, xL, asin(xL), p, asin(p), 1.0/sqrt(1.0-x^2))
+    else
+       return asin(x), 1.0/sqrt(1.0-x^2)
+    end
+  end
+end
+function cc_asin(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return line_seg(x, xL, asin(xL), xU, asin(xU)), dline_seg(x, xL, asin(xL), xU, asin(xU), 1.0/sqrt(1.0-x^2))
+  elseif (xU <= 0.0)
+    return asin(x), 1.0/sqrt(1.0-x^2)
+  else
+    p,flag = secant(xL, 0.0, xL, 0.0, asin_env, xU, 0.0)
+    if flag
+        p = golden_section(xL, 0.0, asin_env, xU, 0.0)
+    end
+    if (x <= p)
+      return asin(x), 1.0/sqrt(1.0-x^2)
+    else
+      return line_seg(x, p, asin(p), xU, asin(xU)), dline_seg(x, p, asin(p), xU, asin(xU), 1.0/sqrt(1.0-x^2))
+    end
+  end
+end
+function asin(x::MC{N}) where N
+  Intv = asin(x.Intv)
+  xL = x.Intv.lo
+  xU = x.Intv.hi
+  xLc = Intv.lo
+  xUc = Intv.hi
+  midcc,cc_id = mid3(x.cc,x.cv,xU)
+  midcv,cv_id = mid3(x.cc,x.cv,xL)
+  cc,dcc = cc_asin(midcc,x.Intv.lo,x.Intv.hi)
+  cv,dcv = cv_asin(midcv,x.Intv.lo,x.Intv.hi)
+  if ((Intv.lo==-Inf)||(Intv.hi==Inf))
+    error("Function unbounded on domain")
+  end
+  if (MC_param.mu >= 1)
+    gcc1,gdcc1 = cc_asin(x.cv,x.Intv.lo,x.Intv.hi)
+    gcv1,gdcv1 = cv_asin(x.cv,x.Intv.lo,x.Intv.hi)
+    gcc2,gdcc2 = cc_asin(x.cc,x.Intv.lo,x.Intv.hi)
+    gcv2,gdcv2 = cv_asin(x.cc,x.Intv.lo,x.Intv.hi)
+    cv_grad = max(0.0,gdcv1)*x.cv_grad + min(0.0,gdcv2)*x.cc_grad
+    cc_grad = min(0.0,gdcc1)*x.cv_grad + max(0.0,gdcc2)*x.cc_grad
+  else
+    cc_grad = mid_grad(x.cc_grad, x.cv_grad, cc_id)*dcc
+    cv_grad = mid_grad(x.cc_grad, x.cv_grad, cv_id)*dcv
+    cv,cc,cv_grad,cc_grad = cut(xLc,xUc,cv,cc,cv_grad,cc_grad)
+  end
+  return MC{N}(cv, cc, Intv, cv_grad, cc_grad, x.cnst)
+end
+
+####
+
+atan_env(x::Float64, y::Float64, z::Float64) = (x-y)-(1.0+sqr(x))*(atan(x)-atan(y))
+function cv_atan(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return line_seg(x, xL, atan(xL), xU, atan(xU)), dline_seg(x, xL, atan(xL), xU, atan(xU), 1.0/(1.0+x^2))
+  elseif (xU <= 0.0)
+    return atan(x), 1.0/(1.0+x^2)
+  else
+    p,flag = secant(xL, 0.0, xL, 0.0, atan_env, xU, 0.0)
+    if flag
+        p = golden_section(xL, 0.0, atan_env, xU, 0.0)
+    end
+    if (x <= p)
+      return atan(x), 1.0/(1.0+x^2)
+    else
+      return line_seg(x, p, atan(p), xU, atan(xU)), dline_seg(x, p, atan(p), xU, atan(xU), 1.0/(1.0+x^2))
+    end
+  end
+end
+function cc_atan(x::Float64, xL::Float64, xU::Float64)
+  p = 0.0
+  if (xL >= 0.0)
+    return atan(x), 1.0/(1.0+x^2)
+  elseif (xU <= 0.0)
+    return line_seg(x, xL, atan(xL), xU, atan(xU)), dline_seg(x, xL, atan(xL), xU, atan(xU), 1.0/(1.0+x^2))
+  else
+    p,flag = secant(0.0,xU,0.0,xU,atan_env,xL,0.0)
+    if flag
+      p = golden_section(0.0,xU,atan_env,xL,0.0)
+    end
+    if (x <= p)
+       return line_seg(x, xL, atan(xL), p, atan(p)), dline_seg(x, xL, atan(xL), p, atan(p), 1.0/(1.0+x^2))
+    else
+       return atan(x), 1.0/(1.0+x^2)
+     end
+  end
+end
+function atan(x::MC{N}) where N
+    Intv = atan(x.Intv)
+    xL = x.Intv.lo
+    xU = x.Intv.hi
+    xLc = Intv.lo
+    xUc = Intv.hi
+    midcc,cc_id = mid3(x.cc,x.cv,xU)
+    midcv,cv_id = mid3(x.cc,x.cv,xL)
+    cc,dcc = cc_atan(midcc,x.Intv.lo,x.Intv.hi)
+    cv,dcv = cv_atan(midcv,x.Intv.lo,x.Intv.hi)
+    if ((Intv.lo==-Inf)||(Intv.hi==Inf))
+      error("Function unbounded on domain")
+    end
+    if (MC_param.mu >= 1)
+      gcc1,gdcc1 = cc_atan(x.cv,x.Intv.lo,x.Intv.hi)
+      gcv1,gdcv1 = cv_atan(x.cv,x.Intv.lo,x.Intv.hi)
+      gcc2,gdcc2 = cc_atan(x.cc,x.Intv.lo,x.Intv.hi)
+      gcv2,gdcv2 = cv_atan(x.cc,x.Intv.lo,x.Intv.hi)
+      cv_grad = max(0.0,gdcv1)*x.cv_grad + min(0.0,gdcv2)*x.cc_grad
+      cc_grad = min(0.0,gdcc1)*x.cv_grad + max(0.0,gdcc2)*x.cc_grad
+    else
+      cc_grad = mid_grad(x.cc_grad, x.cv_grad, cc_id)*dcc
+      cv_grad = mid_grad(x.cc_grad, x.cv_grad, cv_id)*dcv
+      cv,cc,cv_grad,cc_grad = cut(xLc,xUc,cv,cc,cv_grad,cc_grad)
+    end
+    return MC{N}(cv, cc, Intv, cv_grad, cc_grad, x.cnst)
+end
+
+
+deg2rad(x::MC) = (pi/180.0)*x
+rad2deg(x::MC) = (180.0/pi)*x
 
 sec(x::MC)= inv(cos(x))
 csc(x::MC)= inv(sin(x))
@@ -226,13 +418,14 @@ acoth(x::MC) = 0.5*(log(1.0+inv(x))-log(1.0-inv(x)))
 
 sind(x::MC) = sin(deg2rad(x))
 cosd(x::MC) = cos(deg2rad(x))
+tand(x::MC) = tan(deg2rad(x))
 secd(x::MC) = inv(cosd(x))
 cscd(x::MC) = inv(sind(x))
 cotd(x::MC) = inv(tand(x))
 
-asind(x::MC) = asin(deg2rad(x))
-acosd(x::MC) = acos(deg2rad(x))
-atand(x::MC) = atan(deg2rad(x))
-asecd(x::MC) = asec(deg2rad(x))
-acscd(x::MC) = acsc(deg2rad(x))
-acotd(x::MC) = acot(deg2rad(x))
+asind(x::MC) = rad2deg(asin(x))
+acosd(x::MC) = rad2deg(acos(x))
+atand(x::MC) = rad2deg(atan(x))
+asecd(x::MC) = rad2deg(asec(x))
+acscd(x::MC) = rad2deg(acsc(x))
+acotd(x::MC) = rad2deg(acot(x))
