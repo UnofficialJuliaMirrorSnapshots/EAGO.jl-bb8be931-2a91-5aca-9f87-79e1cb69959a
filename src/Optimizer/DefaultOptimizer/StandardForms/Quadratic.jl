@@ -269,10 +269,10 @@ function relax_quadratic!(trg, src::Optimizer, n::NodeBB, r::RelaxationScheme)
 
     # Relax quadratic objective
     if isa(src.objective, MOI.ScalarQuadraticFunction{Float64}) # quadratic objective
-        if (m.objective_convexity)
-            relax_convex_quadratic_inner!(trg, src, src.Objective, set.value, set.value, n, x0)
+        if (src.objective_convexity)
+            relax_convex_quadratic_inner!(trg, src, src.objective, set.value, set.value, n, x0)
         else
-            relax_nonconvex_quadratic!(trg, src, src.Objective, set.value, set.value, n, x0)
+            relax_nonconvex_quadratic!(trg, src, src.objective, set.value, set.value, n, x0)
         end
     end
     #MOI.set(trg, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}(),  QuadMidPoint)

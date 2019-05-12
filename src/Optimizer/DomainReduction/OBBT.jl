@@ -46,7 +46,6 @@ end
 
 #(Should be done (for continuous))
 function aggressive_filtering!(x::Optimizer, y::NodeBB)
-    println("--- begin aggressive filtering ---")
 
     # Initial filtering vector (negative one direction per remark in Gleixner2017)
     variable_number = x.variable_number
@@ -62,10 +61,10 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
     low_delete = Int[]
     upp_delete = Int[]
     for i in new_low_index
-        (y.lower_variable_bounds[i] == -Inf) && push!(low_delete,i)
+        (y.lower_variable_bounds[i.value] != -Inf) && push!(low_delete,i.value)
     end
     for i in new_upp_index
-        (y.upper_variable_bounds[i] == Inf) && push!(upp_delete,i)
+        (y.upper_variable_bounds[i.value] != Inf) && push!(upp_delete,i.value)
     end
     deleteat!(new_low_index, low_delete); low_delete = Int[]
     deleteat!(new_upp_index, upp_delete); upp_delete = Int[]
@@ -79,10 +78,10 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
         low_delete = Int[]
         upp_delete = Int[]
         for i in lower_indx_diff
-            (v[i] < 0.0) && (v[i] = 0.0)
+            (v[i.value] < 0.0) && (v[i.value] = 0.0)
         end
         for i in upper_indx_diff
-            (v[i] > 0.0) && (v[i] = 0.0)
+            (v[i.value] > 0.0) && (v[i.value] = 0.0)
         end
 
         # Termination Condition
@@ -90,9 +89,10 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
         ((k >= 2) && (length(lower_indx_diff) + length(upper_indx_diff) < x.obbt_aggressive_min_dimension)) && break
 
         # Set objective in OBBT problem to filtering vector
-        MOI.set(x.working_relaxed_optimizer,
-                 MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}(),
-                 ScalarAffineFunction(ScalarAffineTerm.(v,x.OBBTvars),0.0))
+
+        MOI.set(x.working_relaxed_optimizer, MOI.ObjectiveSense(), MOI.MAX_SENSE)
+        saf = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(v,x.obbt_variables),0.0)
+        MOI.set(x.working_relaxed_optimizer, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}(), saf)
 
         # Optimizes the problem and if successful filter additional bounds
         MOI.optimize!(x.working_relaxed_optimizer)
@@ -107,13 +107,13 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
                 new_low_index = copy(old_low_index)
                 new_upp_index = copy(old_upp_index)
                 for i in old_low_index
-                    (variable_primal[i] == y.lower_variable_bounds[i]) && push!(low_delete,i)
+                    (variable_primal[i.value] == y.lower_variable_bounds[i.value]) && push!(low_delete, i.value)
                 end
                 for i in old_upp_index
-                    (variable_primal[i] == y.upper_variable_bounds[i]) && push!(upp_delete,i)
+                    (variable_primal[i.value] == y.upper_variable_bounds[i.value]) && push!(upp_delete, i.value)
                 end
-                deleteat!(new_low_index,low_delete)
-                deleteat!(new_upp_index,upp_delete)
+                deleteat!(new_low_index, low_delete)
+                deleteat!(new_upp_index, upp_delete)
             end
         else
             return false
@@ -164,11 +164,11 @@ function calculate_single_variable_relaxation!(opt::Optimizer, y::NodeBB, vari::
     update_lower_variable_bounds1!(opt, y, opt.working_relaxed_optimizer)
     opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, load = true)
     opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, load = false)
-    # set objectives
 
+    # set objectives
     var = MOI.SingleVariable(vari)
-    MOI.set(opt.working_relaxed_optimizer, MOI.ObjectiveFunction{MOI.SingleVariable}(), var)
     MOI.set(opt.working_relaxed_optimizer, MOI.ObjectiveSense(), sense)
+    MOI.set(opt.working_relaxed_optimizer, MOI.ObjectiveFunction{MOI.SingleVariable}(), var)
 
     modelsense = opt.working_relaxed_optimizer.obj_sense
     modeltype = opt.working_relaxed_optimizer.obj_type
@@ -176,6 +176,10 @@ function calculate_single_variable_relaxation!(opt::Optimizer, y::NodeBB, vari::
     modelobj_const = opt.working_relaxed_optimizer.objective_constant
 
     MOI.optimize!(opt.working_relaxed_optimizer)
+end
+
+function aggressive_obbt_on_heurestic(x::Optimizer)
+    x.obbt_aggressive_on
 end
 
 """
@@ -196,15 +200,12 @@ function obbt(x::Optimizer, y::NodeBB)
     # Prefiltering steps && and sets initial LP values
     trival_filtering!(x, y)
 
-    if (x.obbt_aggressive_on)
+    if aggressive_obbt_on_heurestic(x)
         feasibility = aggressive_filtering!(x, y)
     end
     xLP = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
-    println("xLP: $(xLP)")
 
-    while ~(isempty(x.obbt_working_lower_index) && isempty(x.obbt_working_upper_index))
-
-        println("x.obbt_working_lower_index: $(x.obbt_working_lower_index)")
+    while ~(isempty(x.obbt_working_lower_index) && isempty(x.obbt_working_upper_index)) && ~isempty(y)
 
         # Get lower value
         lower_indx = 0
@@ -250,20 +251,17 @@ function obbt(x::Optimizer, y::NodeBB)
                 if feasible_flag
                     xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
                     y.lower_variable_bounds[var_ref.value] = is_integer_variable(x,var_ref.value) ? ceil(xLP[var_ref.value]) : xLP[var_ref.value]
+                    if isempty(y)
+                        feasibility = false
+                        break
+                    end
                 else
                     feasibility = false
                     x.obbt_working_lower_index = []
                     x.obbt_working_upper_index = []
                 end
             else
-                feasibility = false
-                x.failed_solver = PREPROCESSING_FAILED
-                x.global_lower_bound = Inf
-                x.global_upper_bound = -Inf
-                x.result_status_code = result_status_code
-                x.termination_status_code = termination_status
-                println("Algorithm Terminating: Optimization-Based Bound Tightening Relaxation not solved
-                       to global optimality or known feasibility combination.")
+                break
             end
 
         else
@@ -274,7 +272,6 @@ function obbt(x::Optimizer, y::NodeBB)
 
             # Solve optimization model
             calculate_single_variable_relaxation!(x, y, var_ref, MOI.MAX_SENSE)
-
             termination_status = MOI.get(x.working_relaxed_optimizer, MOI.TerminationStatus())
             result_status_code = MOI.get(x.working_relaxed_optimizer, MOI.PrimalStatus())
             valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
@@ -283,24 +280,22 @@ function obbt(x::Optimizer, y::NodeBB)
                 if feasible_flag
                     xLP[:] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), [MOI.VariableIndex(i) for i in 1:x.variable_number])
                     y.upper_variable_bounds[var_ref.value] = is_integer_variable(x,var_ref.value) ? ceil(xLP[var_ref.value]) : xLP[var_ref.value]
+                    if isempty(y)
+                        feasibility = false
+                        break
+                    end
                 else
                     feasibility = false
                     x.obbt_working_lower_index = []
                     x.obbt_working_upper_index = []
                 end
             else
-                feasibility = false
-                x.failed_solver = PREPROCESSING_FAILED
-                x.global_lower_bound = Inf
-                x.global_upper_bound = -Inf
-                x.result_status_code = result_status_code
-                x.termination_status_code = termination_status
-                println("Algorithm Terminating: Optimization-Based Bound Tightening Relaxation not solved
-                    to global optimality or known feasibility combination.")
+                break
             end
         end
         #GenerateLVB!(x)
         trival_filtering!(x,y)
     end
+
     return feasibility
 end

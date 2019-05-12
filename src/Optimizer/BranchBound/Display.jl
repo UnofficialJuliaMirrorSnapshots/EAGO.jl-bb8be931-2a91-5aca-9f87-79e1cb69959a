@@ -11,7 +11,9 @@ function print_solution!(x::Optimizer)
     println("UBD = $(x.objective_value)")
     println("Solution is :")
     if (x.feasible_solution_found)
-      for i=1:length(x.continuous_solution)
+      xlen = length(x.continuous_solution)
+      xlen += (x.reform_epigraph_flag) ? -1 : 0
+      for i=1:xlen
         temp = x.continuous_solution[i]
         println("    X[$i] = $temp")
       end

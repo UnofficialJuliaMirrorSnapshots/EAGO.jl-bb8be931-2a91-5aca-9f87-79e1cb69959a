@@ -6,15 +6,21 @@ Solves the branch and bound problem with the input EAGO optimizer object.
 function solve_nlp!(x::Optimizer)
 
   # initializes Flags
-  TT = stdout
-  UBDSaveFlag = false
-  UBDTempSaveFlag = false
-  PostSaveFlag = false
   if (~x.warm_start)
     x.current_iteration_count = 1
     x.current_node_count = 0
   end
-  NumberOfCuts = 0
+
+  PreprocessTime = 0.0
+  LowerProblemTime = 0.0
+  UpperProblemTime = 0.0
+  PostprocessTime = 0.0
+
+  ran_preprocess = false
+  ran_lower_problem = false
+  ran_upper_problem = false
+  ran_postprocess = false
+  conv_check = false
 
   # terminates when max nodes or iteration is reach, or when node stack is empty
   iterationcountinternal = 0
@@ -22,15 +28,20 @@ function solve_nlp!(x::Optimizer)
 
     iterationcountinternal += 1
 
+    LowerProblemTime = 0.0
+    UpperProblemTime = 0.0
+    PostprocessTime = 0.0
+
+    ran_lower_problem = false
+    ran_upper_problem = false
+    conv_check = false
+
+    x.cut_iterations = 0
+
+
     # Fathom nodes with lower bound greater than global upper bound
     x.global_lower_bound = find_lower_bound(x)
     x.history.lower_bound[x.current_iteration_count] = x.global_lower_bound
-
-    # Sets conditional save flags
-    UBDSaveFlag = false
-    UBDTempSaveFlag = false
-    PostSaveFlag = false
-    x.cut_iterations = 0
 
      # Selects node, deletes it from stack, prints based on verbosity
     CurrentKey,CurrentNode = x.node_selection(x);  x.current_node_count -= 1
@@ -39,6 +50,7 @@ function solve_nlp!(x::Optimizer)
     # Solves preprocessing/LBD/UBD/postprocessing once to get timing right
     x.current_preprocess_info.feasibility = true
     x.current_postprocess_info.feasibility = true
+
     #=
     if (x.current_iteration_count == 1)
       OldLowerInfo = deepcopy(x.current_lower_info)
@@ -65,64 +77,51 @@ function solve_nlp!(x::Optimizer)
     =#
 
     # Performs prepocessing and times
-    #redirect_stdout()
     PreprocessTime = @elapsed x.preprocess!(x,CurrentNode)
-    #PreprocessTime = x.Preprocess(x,CurrentNode)
-    x.history.preprocess_time[x.current_iteration_count] = x.history.preprocess_time[x.current_iteration_count-1]+PreprocessTime
-    #redirect_stdout(TT)
 
     x.current_upper_info.feasibility = true
 
-    if (x.current_preprocess_info.feasibility)
+    ran_lower_problem = x.current_preprocess_info.feasibility
+    if ran_lower_problem
       # solves & times lower bounding problem
       LowerProblemTime = @elapsed x.lower_problem!(x,CurrentNode)
       x.history.lower_bound[x.current_iteration_count] = x.global_lower_bound
-      x.history.lower_time[x.current_iteration_count] = x.history.lower_time[x.current_iteration_count-1]+LowerProblemTime
-      x.history.lower_count += 1
       print_results!(x,true)
 
       while x.cut_condition(x)
         x.add_cut!(x); x.cut_iterations += 1
-        #redirect_stdout()
-        LowerProblemTime = @elapsed x.lower_problem!(x,CurrentNode)
+        LowerProblemTime += @elapsed x.lower_problem!(x,CurrentNode)
         x.history.lower_bound[x.current_iteration_count] = x.global_lower_bound
-        x.history.lower_time[x.current_iteration_count] = x.history.lower_time[x.current_iteration_count-1]+LowerProblemTime
-        x.history.lower_count += 1
-        #redirect_stdout(TT)
         print_results!(x,true)
       end
       x.history.cut_count[x.current_iteration_count] = x.cut_iterations
 
       # checks for infeasibility stores solution
-      if (x.current_lower_info.feasibility)
+      ran_upper_problem = x.current_lower_info.feasibility
+      if ran_upper_problem
+        conv_check = ~x.convergence_check(x)
         if (~x.convergence_check(x))
-          # Solves upper bounding problem
           UpperProblemTime = @elapsed x.upper_problem!(x,CurrentNode)
-          #UpperProblemTime = 0.0
-          #x.upper_problem!(x,CurrentNode)
-          x.history.upper_time[x.current_iteration_count] = x.history.upper_time[x.current_iteration_count-1]+UpperProblemTime
-          x.history.upper_count += 1
-          UBDTempSaveFlag = true
           print_results!(x,false)
 
           # Stores information if better feasible upper bound is formed
-          if (x.current_upper_info.feasibility)
+          ran_postprocess = x.current_upper_info.feasibility
+          if ran_postprocess
             if (x.current_upper_info.value < x.global_upper_bound)
               x.feasible_solution_found = true
               x.first_solution_node = x.maximum_node_id
               x.solution_value = x.current_upper_info.value
               x.continuous_solution[:] = x.current_upper_info.solution
               x.history.upper_bound[x.current_iteration_count] = x.solution_value
-              UBDSaveFlag = true
+            else
+              x.history.upper_bound[x.current_iteration_count] = x.history.upper_bound[x.current_iteration_count-1]
             end
+          else
+            x.history.upper_bound[x.current_iteration_count] = x.history.upper_bound[x.current_iteration_count-1]
           end
 
           # Performs and times post processing
-          #redirect_stdout()
           PostprocessTime = @elapsed x.postprocess!(x,CurrentNode)
-          x.history.postprocess_time[x.current_iteration_count] = x.history.postprocess_time[x.current_iteration_count-1]+PostprocessTime
-          PostSaveFlag = true
-          #redirect_stdout(TT)
 
           # Checks to see if the node
           if (x.current_postprocess_info.feasibility)
@@ -133,10 +132,7 @@ function solve_nlp!(x::Optimizer)
               x.node_storage!(x,Y1,Y2)
             end
           end
-        elseif (~x.exhaustive_search && x.feasible_solution_found)
         end
-      else
-        x.history.upper_bound[x.current_iteration_count] = x.history.upper_bound[x.current_iteration_count-1]
       end
       fathom!(x)
     else
@@ -144,10 +140,20 @@ function solve_nlp!(x::Optimizer)
       x.current_lower_info.feasibility = false
       x.current_upper_info.feasibility = false
     end
-    (~UBDSaveFlag) && (x.history.upper_bound[x.current_iteration_count] = x.global_upper_bound)
-    (~UBDTempSaveFlag) && (x.history.upper_time[x.current_iteration_count] = x.history.upper_time[x.current_iteration_count-1])
-    (~PostSaveFlag) && (x.history.postprocess_time[x.current_iteration_count] = x.history.postprocess_time[x.current_iteration_count-1])
+
+    ~ran_lower_problem && (x.history.lower_bound[x.current_iteration_count] = x.history.lower_bound[x.current_iteration_count-1])
+    (~ran_upper_problem) && (x.history.upper_bound[x.current_iteration_count] = x.history.upper_bound[x.current_iteration_count-1])
+    (ran_upper_problem && ~conv_check) && (x.history.upper_bound[x.current_iteration_count] = x.history.upper_bound[x.current_iteration_count-1])
+
+    x.history.preprocess_time[x.current_iteration_count] = x.history.preprocess_time[x.current_iteration_count-1] + PreprocessTime
+    x.history.lower_time[x.current_iteration_count] = x.history.lower_time[x.current_iteration_count-1] + LowerProblemTime
+    x.history.upper_time[x.current_iteration_count] = x.history.upper_time[x.current_iteration_count-1] + UpperProblemTime
+    x.history.postprocess_time[x.current_iteration_count] = x.history.postprocess_time[x.current_iteration_count-1] + PostprocessTime
+
     x.history.count[x.current_iteration_count] = x.current_node_count
+    x.history.lower_count += ran_lower_problem
+    x.history.upper_count += ran_upper_problem
+
     print_iteration!(x)
     x.current_iteration_count += 1
   end

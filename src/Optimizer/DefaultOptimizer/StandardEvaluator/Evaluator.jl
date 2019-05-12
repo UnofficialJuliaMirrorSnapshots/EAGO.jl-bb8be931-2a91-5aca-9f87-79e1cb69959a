@@ -57,8 +57,8 @@ mutable struct Evaluator{T<:Real} <: MOI.AbstractNLPEvaluator
     subexpression_number::Int
     has_nlobj::Bool
     has_reverse::Bool
-    fw_repeats::Int
-    fw_atol::Float64
+    cp_reptitions::Int
+    cp_tolerance::Float64
     objective::FunctionSetStorage
     objective_ubd::Float64
     constraints::Vector{FunctionSetStorage{T}}
@@ -115,7 +115,7 @@ include("univariate.jl")
 include("passes.jl")
 include("get_info.jl")
 include("load.jl")
-#include("match.jl")
+include("reform.jl")
 
 num_state_variables(x::Evaluator) = 0
 num_decision_variables(x::Evaluator) = x.variable_number

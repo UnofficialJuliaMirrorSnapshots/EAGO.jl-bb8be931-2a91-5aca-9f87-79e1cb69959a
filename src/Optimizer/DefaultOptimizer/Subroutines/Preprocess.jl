@@ -36,14 +36,14 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
     end
     #println("obbt")
 
-    #=
     if ((x.cp_depth > x.current_iteration_count) && feas)
         for i in 1:x.cp_reptitions
-            feas = CPWalk!(x,y)
+            feas = cpwalk(x,y)
             (~feas) && (break)
         end
     end
-    =#
+
+    println("obbt feas results: $feas at iteration $(x.current_iteration_count)")
     x.current_preprocess_info.feasibility = feas
     #println("end preprocess")
 end

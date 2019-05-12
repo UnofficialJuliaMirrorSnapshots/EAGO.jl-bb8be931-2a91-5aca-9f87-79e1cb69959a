@@ -375,6 +375,55 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
     end
 end
 
+function forward_eval_obj(d::Evaluator,x)
+    subexpr_values_flt = d.subexpression_values_flt
+    subexpr_values_set = d.subexpression_values_set
+    user_operators = d.m.nlp_data.user_operators::JuMP._Derivatives.UserOperatorRegistry
+    user_input_buffer = d.jac_storage
+
+    PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
+    for (ind, k) in enumerate(reverse(d.subexpression_order))
+        PRINT_EVAL && println("SUBEXPRESSION NUMBER: #$(ind)")
+        ex = d.subexpressions[k]
+        temp = forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
+                                         ex.nd, ex.adj, ex.const_values,
+                                         d.parameter_values, d.current_node,
+                                         x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                                         user_operators=user_operators)
+        PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
+        d.subexpression_isnum[ind] = ex.numvalued[1]
+        if d.subexpression_isnum[ind]
+            d.subexpression_values_flt[k] = temp
+        else
+            d.subexpression_values_set[k] = temp
+        end
+    end
+
+    PRINT_EVAL && println("START TO EVALUATE OBJECTIVE")
+    if d.has_nlobj
+        ex = d.objective
+        println("ex.setstorage: $(ex.setstorage)")
+        println("ex.numberstorage: $(ex.numberstorage)")
+        println("ex.numvalued: $(ex.numvalued)")
+        println("ex.nd: $(ex.nd)")
+        println("ex.adj: $(ex.adj)")
+        println("ex.const_values: $(ex.const_values)")
+        println("d.parameter_values: $(d.parameter_values)")
+        println("d.current_node: $(d.current_node)")
+        println("x: $(x)")
+        println("subexpr_values_flt: $(subexpr_values_flt)")
+        println("subexpr_values_set: $(subexpr_values_set)")
+        println("d.subexpression_isnum: $(d.subexpression_isnum)")
+        println("user_input_buffer: $(user_input_buffer)")
+        println("user_operators: $(user_operators)")
+        forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
+                     ex.nd, ex.adj, ex.const_values,
+                     d.parameter_values, d.current_node,
+                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                     user_operators=user_operators)
+    end
+end
+
 function forward_eval_all(d::Evaluator,x)
     subexpr_values_flt = d.subexpression_values_flt
     subexpr_values_set = d.subexpression_values_set
@@ -423,8 +472,8 @@ end
 # maximum number to perform reverse operation on associative term by summing and evaluating pairs
 # remaining terms not reversed
 const MAX_ASSOCIATIVE_REVERSE = 4
-function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
-                      nd::Vector{JuMP.NodeData}, adj, x_values) where T
+function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpression_isnum,
+                      subexpr_values_set, nd::Vector{JuMP.NodeData}, adj, x_values) where T
 
     @assert length(setstorage) >= length(nd)
     @assert length(numberstorage) >= length(nd)
@@ -432,6 +481,8 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
 
     children_arr = rowvals(adj)
     N = length(x_values)
+
+    continue_flag = true
 
     for k in 2:length(nd)
         @inbounds nod = nd[k]
@@ -445,7 +496,7 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
         elseif nod.nodetype == JuMP._Derivatives.SUBEXPRESSION
             @inbounds isnum = subexpression_isnum[nod.index]
             if ~isnum
-                @inbounds subexpr_values_set[nod.index] = setstorage[k]
+                @inbounds subexpr_values_set[nod.index] = setstorage[k]     # Assign
             end
         elseif numvalued[k]
             continue
@@ -465,7 +516,7 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
                 count = 0
                 for c_idx in children_idx
                     if (count < MAX_ASSOCIATIVE_REVERSE)
-                        if ~numvalued[ci_idx]
+                        if ~numvalued[c_idx]
                             tmp_sum = 0.0; tmp_hold = 0.0
                             for cin_idx in children_idx
                                 if (cin_idx != c_idx)
@@ -486,6 +537,7 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
                                 @inbounds tmp_hold += setstorage[ix]
                             end
                             pnew, xhold, xsum = plus_rev(parent_value, tmp_hold, tmp_sum)
+                            isempty(pnew) && (continue_flag = false)
                             setstorage[parent_index] = pnew
                             setstorage[ix] = xhold
                             count += 1
@@ -512,10 +564,10 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
                 end
                 setstorage[parent_index] = pnew
                 if ~chdset1
-                    setstorage[chdset1] = xnew
+                    setstorage[ix1] = xnew
                 end
                 if ~chdset2
-                    setstorage[chdset2] = ynew
+                    setstorage[ix2] = ynew
                 end
                 PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 3) # :*
@@ -526,7 +578,7 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
                 count = 0
                 for c_idx in children_idx
                     if (count < MAX_ASSOCIATIVE_REVERSE)
-                        if ~numvalued[ci_idx]
+                        if ~numvalued[c_idx]
                             tmp_sum = 1.0; tmp_hold = 1.0
                             for cin_idx in children_idx
                                 if (cin_idx != c_idx)
@@ -573,10 +625,10 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
                 end
                 setstorage[parent_index] = pnew
                 if ~chdset1
-                    setstorage[chdset1] = xnew
+                    setstorage[ix1] = xnew
                 end
                 if ~chdset2
-                    setstorage[chdset2] = ynew
+                    setstorage[ix2] = ynew
                 end
                 PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 5) # :/
@@ -605,42 +657,50 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued,
             elseif (op == 6) # ifelse
                 continue
             end
-            #=
-            PRINT_EVAL && println("result: $tmp_sum")
-            =#
         elseif (nod.nodetype == JuMP._Derivatives.CALLUNIVAR) # assumes that child is set-valued and thus parent is set-valued
             op = nod.index
             @inbounds child_value = setstorage[k]
             @inbounds parent_value = setstorage[nod.parent]
-            pnew, cnew = eval_univariate_set_reverse(op, parent_value, child_val)
+            pnew, cnew = eval_univariate_set_reverse(op, parent_value, child_value)
+            isempty(cnew) && (continue_flag = false)
             @inbounds setstorage[k] = cnew
             @inbounds setstorage[nod.parent] = pnew
             PRINT_EVAL && print_call!(univariate_operators_rev[op], k, children_idx)
         end
+        ~continue_flag && break
     end
-    return nothing
+    return continue_flag
 end
 
 # looks good
 function reverse_eval_all(d::Evaluator,x)
+    subexpr_values_set = d.subexpression_values_set
+    subexpr_isnum = d.subexpression_isnum
+    feas = true
+
     if d.has_nlobj
         # Cut Objective at upper bound
         ex = d.objective
-        ex.setstorage[1] = x.setstorage[1] ∩ IntervalType(-Inf,d.objective_ubd)
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
+        ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(-Inf,d.objective_ubd)
+        feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
+                              subexpr_values_set, ex.nd, ex.adj, x)
     end
     for i in 1:length(d.constraints)
         # Cut constraints on constraint bounds & reverse
         ex = d.constraints[i]
-        ex.setstorage[1] = x.setstorage[1] ∩ IntervalType(d.constraints_lbd[i], d.constraints_ubd[i])
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
+        ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(d.constraints_lbd[i], d.constraints_ubd[i])
+        feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
+                              subexpr_values_set, ex.nd, ex.adj, x)
     end
     for k in 1:length(d.subexpression_order)
         ex = d.subexpressions[d.subexpression_order[k]]
         ex.setstorage[1] = subexpression_values_set[d.subexpression_order[k]] # TODO MAKE SURE INDEX ON SUBEXPRESSION_VALUES_SET CORRECT
-        reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, ex.nd, ex.adj, x)
+        feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
+                              subexpr_values_set, ex.nd, ex.adj, x)
     end
     copyto!(d.last_x,x)
+
+    return feas
 end
 
 """
@@ -651,19 +711,23 @@ by a reverse pass if `d.has_reverse` as long as the node between passes differs
 by more that `d.fw_atol` at each iteration.
 """
 function forward_reverse_pass(d::Evaluator,x)
+    flag = true
     #if ~same_box(d.current_node, d.last_node, 0.0)
 #        d.last_node = d.current_node
         if (d.last_x != x)
             if d.has_reverse
-                for i in d.fw_repeats
-                    forward_eval_all(d,x)
-                    reverse_eval_all(d,x)
-                    # if node on reverse is same... forward reversing
-                    same_box(d.current_node, get_node(d), d.fw_atol) && break
+                for i in d.cp_reptitions
+                    if flag
+                        forward_eval_all(d,x)
+                        flag = reverse_eval_all(d,x)
+                        ~flag && break
+                        same_box(d.current_node, get_node(d), d.cp_tolerance) && break
+                    end
                 end
             else
                 forward_eval_all(d,x)
             end
         end
 #    end
+     return flag
 end

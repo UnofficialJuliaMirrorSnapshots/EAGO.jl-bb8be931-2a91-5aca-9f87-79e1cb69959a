@@ -35,7 +35,11 @@ function default_lower_bounding!(x::Optimizer,y::NodeBB)
         if feasible_flag
             x.current_lower_info.feasibility = true
             x.current_lower_info.value = MOI.get(x.working_relaxed_optimizer, MOI.ObjectiveValue())
-            x.current_lower_info.solution[1:end] = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
+            vprimal_solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
+            #println("x.current_lower_info.value: $(x.current_lower_info.value)")
+            #println("vprimal_solution: $vprimal_solution")
+            #println("x.current_lower_info.solution: $(x.current_lower_info.solution)")
+            x.current_lower_info.solution[1:end] = vprimal_solution
             set_dual!(x)
         else
             x.current_lower_info.feasibility = false

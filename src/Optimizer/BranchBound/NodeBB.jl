@@ -33,6 +33,18 @@ last_branch(x::NodeBB) = x.last_branch
 branch_direction(x::NodeBB) = x.branch_direction
 
 length(x::NodeBB) = length(x.lower_variable_bounds)
+function isempty(x::NodeBB)
+    bool = false
+    for i in 1:length(x)
+        @inbounds lower = x.lower_variable_bounds[i]
+        @inbounds upper = x.upper_variable_bounds[i]
+        if (lower >= upper)
+            bool = true
+            break
+        end
+    end
+    bool
+end
 
 """
     NodeHistory

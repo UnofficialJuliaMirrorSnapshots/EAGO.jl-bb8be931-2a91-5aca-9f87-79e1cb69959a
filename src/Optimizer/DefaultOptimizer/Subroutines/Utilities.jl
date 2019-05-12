@@ -80,6 +80,7 @@ Updates bounds on optimizer `z` by adding new box valued constraints.
 function update_upper_variable_bounds!(m::Optimizer,y::NodeBB,z::T) where {T<:MOI.AbstractOptimizer}
     # Updates variables bounds
     typevar = m.upper_variables
+    println("m.variable_info: $(m.variable_info)")
     for (i,var) in enumerate(m.variable_info)
         var_xi = MOI.SingleVariable(typevar[i])
         if var.is_integer

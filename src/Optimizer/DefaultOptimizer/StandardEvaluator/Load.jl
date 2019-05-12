@@ -43,7 +43,7 @@ end
 Builds the evaluator used to generate relaxations of the nonlinear equations
 and constraints from a source model.
 """
-function build_nlp_evaluator(S::R,src::T,x::Optimizer) where {R<:Type, T<:MOI.AbstractNLPEvaluator}
+function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where {R<:Type, T<:MOI.AbstractNLPEvaluator}
 
     # Checks to see if nlp data block evaluator is present
     if ~isa(src,EAGO.EmptyNLPEvaluator)
@@ -99,7 +99,8 @@ function build_nlp_evaluator(S::R,src::T,x::Optimizer) where {R<:Type, T<:MOI.Ab
         end
 
         # USER OUTPUT BUFFERS??????
-        d.fw_repeats = x.evaluation_reptitions
+        d.cp_tolerance = x.cp_tolerance
+        d.cp_reptitions = x.cp_reptitions
         d.has_reverse = x.evaluation_reverse
         d.jac_storage = Array{Float64}(undef,max(num_variables_, d.m.nlp_data.largest_user_input_dimension)) # DO I NEED THIS
 

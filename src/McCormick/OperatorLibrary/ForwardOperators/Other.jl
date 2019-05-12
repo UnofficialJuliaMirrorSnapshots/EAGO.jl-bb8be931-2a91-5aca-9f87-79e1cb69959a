@@ -171,7 +171,7 @@ function intersect(x::MC{N}, y::IntervalType) where N
       cv_grad = x.cv_grad
     else
       cv = lo(y)
-      cv_grad = zero(y.cv_grad)
+      cv_grad = zero(x.cv_grad)
     end
     # Concave terms
     if (x.cc <= hi(y))
@@ -179,7 +179,7 @@ function intersect(x::MC{N}, y::IntervalType) where N
       cc_grad = x.cc_grad
     else
       cc = hi(y)
-      cc_grad = zero(y.cc_grad)
+      cc_grad = zero(x.cc_grad)
     end
     return MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst))
   end

@@ -15,6 +15,9 @@ function MOI.eval_objective(d::Evaluator, x)
     return val
 end
 
+get_node_lower(d::FunctionSetStorage, i::Int) = d.setstorage[i].Intv.lo
+get_node_upper(d::FunctionSetStorage, i::Int) = d.setstorage[i].Intv.hi
+
 function MOI.eval_constraint(d::Evaluator, g, x)
     d.eval_constraint_timer += @elapsed begin
         forward_reverse_pass(d,x)

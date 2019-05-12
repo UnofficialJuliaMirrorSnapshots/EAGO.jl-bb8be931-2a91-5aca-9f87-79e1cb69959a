@@ -174,7 +174,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     # Feasibility-Based Bound Tightening Options
     cp_depth::Int
     cp_reptitions::Int
-    evaluation_reptitions::Int
+    cp_tolerance::Float64
     evaluation_reverse::Bool
 
     # Options for Poor Man's LP
@@ -205,6 +205,11 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     # Status flags
     first_relaxed::Bool
     upper_has_node::Bool
+
+    # Problem reformulation options
+    reform_epigraph_flag::Bool
+    reform_cse_flag::Bool
+    reform_flatten_flag::Bool
 
     # Debug
     debug1::Any
@@ -238,9 +243,9 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:global_upper_bound] = Inf
 
         # Output specification fields
-        default_opt_dict[:verbosity] = 1
+        default_opt_dict[:verbosity] = 4
         default_opt_dict[:warm_start] = false
-        default_opt_dict[:output_iterations] = 100
+        default_opt_dict[:output_iterations] = 1
         default_opt_dict[:header_iterations] = 1000
         default_opt_dict[:digits_displayed] = 3
         default_opt_dict[:return_history] = false
@@ -251,17 +256,17 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:dbbt_tolerance] = 1E-8
 
         # Optimality-based bound tightening parameters
-        default_opt_dict[:obbt_depth] = 0
-        default_opt_dict[:obbt_aggressive_on] = false
+        default_opt_dict[:obbt_depth] = 50
+        default_opt_dict[:obbt_aggressive_on] = true
         default_opt_dict[:obbt_aggressive_max_iteration] = 2
         default_opt_dict[:obbt_aggressive_min_dimension] = 2
-        default_opt_dict[:obbt_tolerance] = 1E-3
-        default_opt_dict[:obbt_reptitions] = 2
+        default_opt_dict[:obbt_tolerance] = 1E-9
+        default_opt_dict[:obbt_reptitions] = 20
 
         # Feasibility-Based Bound Tightening Options
         default_opt_dict[:cp_depth] = 0
         default_opt_dict[:cp_reptitions] = 10
-        default_opt_dict[:evaluation_reptitions] = 1
+        default_opt_dict[:cp_tolerance] = 0.99
         default_opt_dict[:evaluation_reverse] = false
 
         # Feasibility-Based Bound Tightening for Quadratics
@@ -293,6 +298,11 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:upper_has_node] = false
 
         default_opt_dict[:mid_cvx_factor] = 0.25
+
+        # Problem Reformulation Options
+        default_opt_dict[:reform_epigraph_flag] = false
+        default_opt_dict[:reform_cse_flag] = true
+        default_opt_dict[:reform_flatten_flag] = true
 
         for i in keys(default_opt_dict)
             if (haskey(options,i))
