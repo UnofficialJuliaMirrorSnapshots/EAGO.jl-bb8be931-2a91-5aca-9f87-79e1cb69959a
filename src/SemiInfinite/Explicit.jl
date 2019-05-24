@@ -1,25 +1,40 @@
-function set_xpbar(ProblemStorage::SIPProblemStorage)
-  xbar = (ProblemStorage.x_u + ProblemStorage.x_l)/2.0
-  pbar = (ProblemStorage.p_u + ProblemStorage.p_l)/2.0
-  return xbar, pbar, ProblemStorage.nx, ProblemStorage.np
+function set_xpbar(problem_storage::SIP_Problem_Storage)
+  xbar = (problem_storage.x_u + problem_storage.x_l)/2.0
+  pbar = (problem_storage.p_u + problem_storage.p_l)/2.0
+  return xbar, pbar, problem_storage.nx, problem_storage.np
 end
 
-function explicit_llp(xbar::Vector{Float64}, sip_storage::SIPResult, ProblemStorage::SIPProblemStorage)
+function explicit_llp(xbar::Vector{Float64}, sip_storage::SIP_Result, problem_storage::SIP_Problem_Storage)
 
-  g(p) = ProblemStorage.gSIP(xbar,p)
-  model = Model(with_optimizer(ProblemStorage.opts.lower_level_optimizer))
-  vars, model = solve_script(ProblemStorage.gSIP, ProblemStorage.p_l, ProblemStorage.p_u, model)
+  np = problem_storage.np
+  pL = problem_storage.p_l
+  pU = problem_storage.p_u
 
-  termination_status = JuMP.termination_status(model)
-  result_status = JuMP.primal_status(model)
+  model_llp = deepcopy(problem_storage.opts.model)
+
+  g(p) = problem_storage.gSIP(xbar, p)
+  register(model_llp, :g, np, g, autodiff=true)
+  @variable(model_llp, pL[i] <= p[i=1:np] <= pU[i])
+
+  if np == 1
+    @NLobjective(model_llp, Max, g(p[1]))
+  else
+    @NLobjective(model_llp, Max, g(p...))
+  end
+
+
+  optimize!(model_llp)
+
+  termination_status = JuMP.termination_status(model_llp)
+  result_status = JuMP.primal_status(model_llp)
   valid_result, is_feasible = is_globally_optimal(termination_status, result_status)
 
-  sip_storage.lower_level_time += MOI.get(model, MOI.SolveTime())
+  sip_storage.lower_level_time += MOI.get(model_llp, MOI.SolveTime())
 
   if valid_result
       if is_feasible
-        INNg2 = -JuMP.objective_value(model)
-        sip_storage.p_bar[:] = JuMP.value.(vars)
+        INNg2 = JuMP.objective_value(model_llp)
+        sip_storage.p_bar[:] = JuMP.value.(p)
       end
   else
     error("Lower level problem.")
@@ -29,65 +44,63 @@ function explicit_llp(xbar::Vector{Float64}, sip_storage::SIPResult, ProblemStor
 end
 
 # should be done
-function explicit_lbp(lower_disc_set::Vector{Vector{Float64}}, sip_storage::SIPResult, ProblemStorage::SIPProblemStorage)
-  ng = length(lower_disc_set)
-  gL = Float64[-Inf for i=1:ng]
-  gU = Float64[0.0 for i=1:ng]
+function explicit_bnd(disc_set::Vector{Vector{Float64}}, eps_g::Float64, sip_storage::SIP_Result, problem_storage::SIP_Problem_Storage, flag::Bool)
+  ng = length(disc_set)
+  nx = problem_storage.nx
+  xL = problem_storage.x_l
+  xU = problem_storage.x_u
 
-  # defines discretization of SIP constraint
-  g(x) = ProblemStorage.gSIP.(x,lower_disc_set)
+  println("nx: $nx")
 
   # create JuMP model
-  model = Model(with_optimizer(ProblemStorage.opts.lower_problem_optimizer))
-  vars, model = solve_script(ProblemStorage.f,
-                             ProblemStorage.x_l, ProblemStorage.x_u,
-                             model, g = g, gL = gL, gU = gU)
+  model_bnd = deepcopy(problem_storage.opts.model)
 
-  termination_status = JuMP.termination_status(model)
-  result_status = JuMP.primal_status(model)
+  # defines discretization of SIP constraint
+  @variable(model_bnd, xL[i] <= x[i=1:nx] <= xU[i])
+  for i in 1:ng
+      gi = Symbol("g$i")
+      gtemp = x -> problem_storage.gSIP(x, disc_set[i])
+      g(x...) = gtemp(x)
+      register(model_bnd, gi, nx, g, autodiff=true)
+      func_call = Expr(:call)
+      args = []
+      push!(args, gi)
+      for i in 1:nx
+        push!(args, JuMP.VariableRef(model_bnd, MathOptInterface.VariableIndex(i)))
+      end
+      func_call.args = args
+      ineq_call = Expr(:call)
+      ineq_call.args = [:(<=); func_call; -eps_g]
+      JuMP.add_NL_constraint(model_bnd, ineq_call)
+  end
+
+  f(x...) =  problem_storage.f(x)
+  register(model_bnd, :f, nx, f, autodiff=true)
+  if nx == 1
+    @NLobjective(model_bnd, Min,  f(x[1]))
+  else
+    @NLobjective(model_bnd, Min, f(x...))
+  end
+
+  optimize!(model_bnd)
+
+  termination_status = JuMP.termination_status(model_bnd)
+  result_status = JuMP.primal_status(model_bnd)
   valid_result, is_feasible = is_globally_optimal(termination_status, result_status)
 
-  sip_storage.lower_bounding_time += MOI.get(model, MOI.SolveTime())
+  sip_storage.lower_bounding_time += MOI.get(model_bnd, MOI.SolveTime())
 
   if valid_result
       if is_feasible
-        sip_storage.lower_bound = JuMP.objective_value(model)
-        sip_storage.x_bar[:] = JuMP.value.(vars)
+        if flag
+          sip_storage.lower_bound = JuMP.objective_value(model_bnd)
+        else
+          sip_storage.upper_bound = JuMP.objective_value(model_bnd)
+        end
+        sip_storage.x_bar[:] = JuMP.value.(x)
       end
   else
     error("Lower problem did not solve to global optimality.")
-  end
-
-  return is_feasible
-end
-
-function explicit_ubp(upper_disc_set::Vector{Vector{Float64}}, eps_g::Float64, sip_storage::SIPResult, ProblemStorage::SIPProblemStorage)
-  ng = length(upper_disc_set)
-  gL = Float64[-Inf for i=1:ng]
-  gU = Float64[-eps_g for i=1:ng]
-
-  # defines discretization of SIP constraint
-  g(x) = ProblemStorage.gSIP.(x, upper_disc_set)
-
-  # create JuMP model
-  model = Model(with_optimizer(ProblemStorage.opts.upper_problem_optimizer))
-  vars, model = solve_script(ProblemStorage.f,
-                             ProblemStorage.x_l, ProblemStorage.x_u,
-                             model, g = g, gL = gL, gU = gU)
-
-  termination_status = JuMP.termination_status(model)
-  result_status = JuMP.primal_status(model)
-  valid_result, is_feasible = is_globally_optimal(termination_status, result_status)
-
-  sip_storage.upper_bounding_time += MOI.get(model, MOI.SolveTime())
-
-  if valid_result
-      if is_feasible
-        sip_storage.upper_bound = JuMP.objective_value(model)
-        sip_storage.x_bar[:] = JuMP.value.(vars)
-      end
-  else
-    error("Upper problem did not solve to global optimality.")
   end
 
   return is_feasible
@@ -99,7 +112,7 @@ end
 Solves a semi-infinite program via the algorithm presented in Mitsos2011 using
 the EAGOGlobalSolver to solve the lower bounding problem, lower level problem,
 and the upper bounding problem. The options for the algorithm and the global
-solvers utilized are set by manipulating a SIPopt containing the options info.
+solvers utilized are set by manipulating a sip_options containing the options info.
 Inputs:
 * `f::Function`: Objective in the decision variable. Takes a single argument
                  vector that must be untyped.
@@ -107,12 +120,12 @@ Inputs:
                     being a vector containing the decision variable and the
                     second being a vector containing the uncertainity
                     variables. The function must be untyped.
-* `SIPopt::SIP_opts`: Option type containing problem information
+* opts::SIP_opts`: Option type containing problem information
 Returns: A SIP_result composite type containing solution information.
 """
 function explicit_sip_solve(f::Function, gSIP::Function, x_l::Vector{Float64},
                             x_u::Vector{Float64}, p_l::Vector{Float64},
-                            p_u::Vector{Float64}; opts = nothing)
+                            p_u::Vector{Float64}, m::JuMP.Model; opts = nothing)
 
   @assert length(p_l) == length(p_u)
   @assert length(x_l) == length(x_u)
@@ -120,14 +133,14 @@ function explicit_sip_solve(f::Function, gSIP::Function, x_l::Vector{Float64},
   n_x = length(x_l)
 
   if opts == nothing
-      opts = SIPOptions()
+      opts = SIP_Options()
+      opts.model = m
   end
 
-  ProblemStorage = SIPProblemStorage(f, gSIP, x_l, x_u, p_l, p_u, n_p, n_x, opts,
+  problem_storage = SIP_Problem_Storage(f, gSIP, x_l, x_u, p_l, p_u, n_p, n_x, opts,
                                      nothing, nothing, Float64[], Float64[], 0,
                                      :nothing, Float64[], Float64[], 0)
 
-  sip_sto = core_sip_routine(explicit_llp, explicit_llp, explicit_lbp,
-                             explicit_ubp, set_xpbar, ProblemStorage)
+  sip_sto = core_sip_routine(explicit_llp, explicit_bnd, set_xpbar, problem_storage)
   return sip_sto
 end

@@ -655,13 +655,6 @@ function multiply_MV(x1::MC{N},x2::MC{N}) where {N}
 	return MC{N}(cv, cc, Intv_calc, cv_grad, cc_grad, cnst)
 end
 
-
-
-
-
-
-
-
 function mul1_u1pos_u2pos(x1::MC{N},x2::MC{N},cnst::Bool) where N
   Intv = x1.Intv*x2.Intv
   xLc = Intv.lo
@@ -1083,8 +1076,7 @@ function *(x1::MC{N},x2::MC{N}) where N
 	degen2 = ((x2.Intv.hi - x2.Intv.lo) == 0.0)
 
 	if (MC_param.mu >= 1 && ~(degen1||degen2))
-		xt = multiply_MV(x1,x2)
-		return affine_intv_contract(xt)
+		return multiply_MV(x1,x2)
 		#=
 	elseif (MC_param.multivar_refine && ~(degen1||degen2))
 		#println("NS MV mult trace 1")
@@ -1100,39 +1092,30 @@ function *(x1::MC{N},x2::MC{N}) where N
 		return multiply_MV_NS(x1,x2,N,cnst) # DONE (minus gradients & case handling?)
 		=#
 	elseif (x1.Intv.lo >= 0.0)
-		xt = multiply_STD_NS(x1,x2)
-		return affine_intv_contract(xt)
+		return multiply_STD_NS(x1,x2)
 		#return STD_NS_ALT(x1,x2)
 	elseif (x1.Intv.hi <= 0.0)
 		if (x2.Intv.lo >= 0.0)
-			xt = -((-x1)*x2)
-			return affine_intv_contract(xt)
+			return -((-x1)*x2)
 		elseif (x2.Intv.hi <= 0.0)
-			xt = (-x1)*(-x2)
-			return affine_intv_contract(xt)
+			return (-x1)*(-x2)
 		else
-			xt = -(x2*(-x1))
-			return affine_intv_contract(xt)
+			return -(x2*(-x1))
 		end
 	elseif (x2.Intv.lo >= 0.0)
-		xt = x2*x1
-		return affine_intv_contract(xt)
+		return x2*x1
 	elseif (x2.Intv.hi <= 0.0)
-		xt = -((-x2)*x1)
-		return affine_intv_contract(xt)
+		return -((-x2)*x1)
 	else
     	if (x2.cnst)
-			xt = STD_NS_ALT(x1,x2)
-	  		return affine_intv_contract(xt)
+	  		return STD_NS_ALT(x1,x2)
       		#return mul1_u1mix_u2mix(x1,x2,x1.cnst)
     	elseif (x1.cnst)
-			xt = STD_NS_ALT(x1,x2)
-	  		return affine_intv_contract(xt)
+	  		return STD_NS_ALT(x1,x2)
       		#return mul1_u1mix_u2mix(x2,x1,x2.cnst)
     	else
 	  		#return STD_NS_ALT(x1,x2)
-	  		xt = mul2_u1mix_u2mix(x1,x2)
-	  		return affine_intv_contract(xt)
+	  		return mul2_u1mix_u2mix(x1,x2)
     	end
 	end
 end

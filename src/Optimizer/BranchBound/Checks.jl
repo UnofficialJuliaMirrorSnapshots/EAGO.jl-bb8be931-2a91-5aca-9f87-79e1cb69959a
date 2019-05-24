@@ -37,8 +37,12 @@ function default_termination_check(x::Optimizer)
         end
       elseif ~t3
         (x.verbosity >= 3) && println("Node Limit Exceeded")
+        x.termination_status_code = MOI.NODE_LIMIT
+        x.result_status_code = MOI.UNKNOWN_RESULT_STATUS
       elseif ~t2
         (x.verbosity >= 3) && println("Maximum Iteration Exceeded")
+        x.termination_status_code = MOI.ITERATION_LIMIT
+        x.result_status_code = MOI.UNKNOWN_RESULT_STATUS
       else
         x.termination_status_code = MOI.OPTIMAL
         x.result_status_code = MOI.FEASIBLE_POINT

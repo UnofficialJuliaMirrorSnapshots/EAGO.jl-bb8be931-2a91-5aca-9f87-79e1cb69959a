@@ -72,7 +72,7 @@ function poor_man_lp(m::Optimizer,n::NodeBB)
                 end
             end
         end
-        TempValue = (constr.upper - func.constant)
+        TempValue = (constr.value - func.constant)
         for term in func.terms
             ti = m.variable_index_to_storage[term.variable_index.value]
             TempValue += -min(term.coefficient*n.upper_variable_bounds[ti], term.coefficient*n.lower_variable_bounds[ti])

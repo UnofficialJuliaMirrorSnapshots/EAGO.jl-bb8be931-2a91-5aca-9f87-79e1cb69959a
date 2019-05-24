@@ -35,7 +35,7 @@ module EAGO
     export NodeBB, get_history, get_lower_bound, get_upper_bound, get_lower_time,
            get_upper_time, get_preprocess_time, get_postprocess_time, get_lower_bound, get_solution_time,
            get_iteration_number, get_node_count, get_absolute_gap, get_relative_gap
-    include("Optimizer/BranchBound/NodeBB.jl")
+    include("Optimizer/BranchBound/node_bb.jl")
     include("Optimizer/BranchBound/subproblem_info.jl")
     include("Relaxations/scheme.jl")
     include("Optimizer/MOIWrapper/optimizer.jl")
@@ -72,6 +72,6 @@ module EAGO
     include("Script/solve_script.jl")
 
     # Routines for solving SIPs
-    export SIPOptions, SIPResult, explicit_sip_solve, implicit_sip_solve
+    export SIP_Options, SIP_Result, explicit_sip_solve, implicit_sip_solve
     include("SemiInfinite/semiinfinite.jl")
 end

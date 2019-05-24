@@ -1,15 +1,19 @@
 function copy_to_function(T::S,x::JuMP._FunctionStorage) where {S<:DataType}
-    temp_set = Array{T}(undef,length(x.nd))
-    temp_flt = Array{Float64}(undef,length(x.nd))
-    temp_bool = Array{Bool}(undef,length(x.nd))
+    lenx = length(x.nd)
+    mc_inf = T(IntervalType(-Inf,Inf))
+    temp_set = T[mc_inf for i=1:lenx]
+    temp_flt = Array{Float64}(undef,lenx)
+    temp_bool = Array{Bool}(undef,lenx)
     FunctionSetStorage{T}(x.nd, x.adj, x.const_values, temp_set, temp_flt, temp_bool,
                           x.grad_sparsity, x.hess_I, x.hess_J, x.dependent_subexpressions)
 end
 
 function copy_to_subexpr(T::S,x::JuMP._SubexpressionStorage) where {S<:DataType}
-    temp_set = Array{T}(undef,length(x.nd))
-    temp_flt = Array{Float64}(undef,length(x.nd))
-    temp_bool = Array{Bool}(undef,length(x.nd))
+    lenx = length(x.nd)
+    mc_inf = T(IntervalType(-Inf,Inf))
+    temp_set = T[mc_inf for i=1:lenx]
+    temp_flt = Array{Float64}(undef,lenx)
+    temp_bool = Array{Bool}(undef,lenx)
     SubexpressionSetStorage{T}(x.nd, x.adj, x.const_values, temp_set, temp_flt,
                                temp_bool, x.linearity)
 end
@@ -72,13 +76,13 @@ function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where 
         end
 
         for i in 1:length(src.constraints)
-            push!(d.constraints,copy_to_function(S,src.constraints[i]))
+            push!(d.constraints, copy_to_function(S,src.constraints[i]))
         end
 
         d.subexpression_order = src.subexpression_order
         d.subexpression_linearity = src.subexpression_linearity
         d.subexpressions_as_julia_expressions = Any[]
-        if isdefined(src,:subexpressions_as_julia_expressions)
+        if isdefined(src, :subexpressions_as_julia_expressions)
             d.subexpressions_as_julia_expressions = src.subexpressions_as_julia_expressions
         end
 
@@ -89,8 +93,8 @@ function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where 
             temp = copy_to_subexpr(S,src.subexpressions[i])
             push!(d.subexpressions,temp)
         end
-        d.subexpression_values_set = fill(NaN,length(d.subexpressions))
-        d.subexpression_values_flt = fill(NaN,length(d.subexpressions))
+        d.subexpression_values_set = fill(NaN, length(d.subexpressions))
+        d.subexpression_values_flt = fill(NaN, length(d.subexpressions))
 
         # Add bounds to evaluator
         for bnds in x.nlp_data.constraint_bounds
@@ -102,6 +106,7 @@ function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where 
         d.cp_tolerance = x.cp_tolerance
         d.cp_reptitions = x.cp_reptitions
         d.has_reverse = x.evaluation_reverse
+        d.subgrad_tighten = x.subgrad_tighten
         d.jac_storage = Array{Float64}(undef,max(num_variables_, d.m.nlp_data.largest_user_input_dimension)) # DO I NEED THIS
 
         d.constraint_number = length(d.constraints)
@@ -145,25 +150,28 @@ function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where 
 end
 
 function get_node(d::Evaluator)
+    #=
     n_var = d.variable_number
     n = NodeBB(fill(-Inf, (n_var,)), fill(Inf, (n_var,)),
                     d.current_node.lower_bound, d.current_node.upper_bound,
                     d.current_node.depth, d.current_node.last_branch,
                     d.current_node.branch_direction)
 
-    println("get_node current 1: $(d.current_node)")
     for i in 1:d.variable_number
         indx_num, eqn_num, sto = d.index_to_variable[i]
-        if (sto == 1)
-            set = d.objective.setstorage[indx_num]
-        elseif (sto == 2)
-            set = d.constraints[eqn_num].setstorage[indx_num]
-        else
-            set = d.subexpressions[eqn_num].setstorage[indx_num]
+        if ~(eqn_num == -1)
+            if (sto == 1)
+                set = d.objective.setstorage[indx_num]
+            elseif (sto == 2)
+                set = d.constraints[eqn_num].setstorage[indx_num]
+            else
+                set = d.subexpressions[eqn_num].setstorage[indx_num]
+            end
+            n.lower_variable_bounds[i] = set.Intv.lo
+            n.upper_variable_bounds[i] = set.Intv.hi
         end
-        n.lower_variable_bounds[i] = set.Intv.lo
-        n.upper_variable_bounds[i] = set.Intv.hi
     end
-    println("get_node current 3: $(d.current_node)")
+    =#
+    n = d.current_node
     return n
 end

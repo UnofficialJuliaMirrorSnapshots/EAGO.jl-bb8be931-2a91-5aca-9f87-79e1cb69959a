@@ -7,7 +7,7 @@ function dag_cse_simplify!(d::NLPEvaluator) where T<:Real
 end
 =#
 
-
+#=
 function post_initialize_modification!(d::NLPEvaluator)
 
     nldata::_NLPData = d.m.nlp_data
@@ -22,7 +22,9 @@ function post_initialize_modification!(d::NLPEvaluator)
     d.last_x = fill(NaN, num_variables_)
 
 end
+=#
 
+#=
 """
     reform_epigraph!
 
@@ -186,4 +188,51 @@ function reform_epigraph!(m::Optimizer)
         m.working_evaluator_block = MOI.NLPBlockData(m.nlp_data.constraint_bounds, built_evaluator, m.nlp_data.has_objective)
     end
     println("end reform epigraph4")
+end
+=#
+
+function reform_epigraph!(m::Optimizer)
+
+    # calculate objective bounds
+    d =  m.working_evaluator_block.evaluator
+    x = ones(d.variable_number)
+    d.current_node = NodeBB()
+    d.current_node.lower_variable_bounds = lower_bound.(m.variable_info)
+    d.current_node.upper_variable_bounds = upper_bound.(m.variable_info)
+    forward_eval_obj(d,x)
+    lower = get_node_lower(d.objective,1)
+    upper = get_node_upper(d.objective,1)
+
+    # get model
+    inner_model = m.nlp_data.evaluator.m
+
+    # add variable
+    @variable(inner_model, lower <= nu <= upper)
+
+    # get model info
+    nvar = JuMP.num_variables(inner_model)
+    sense = JuMP.objective_sense(inner_model)
+    expr = inner_model.nlp_data.nlobj
+
+    # add objective
+    @objective(inner_model, sense, nu)
+
+    # what is largest user input dimensions???
+    # add i
+    if sense == MOI.MIN_SENSE
+        pushfirst!(expr.nd, JuMP.NodeData(JuMP._Derivatives.CALL, 2, -1),
+                            JuMP.NodeData(JuMP._Derivatives.VARIABLE, nvar+1, 1))
+        for i in 3:length(expr.nd)
+            expr.nd[i] = JuMP.NodeData(expr.nd[i].nodetype, expr.nd[i].index, expr.nd[i].parent+1)
+        end
+    elseif sense == MOI.MAX_SENSE
+        pushfirst!(expr.nd, JuMP.NodeData(JuMP._Derivatives.CALL, 1, -1),
+                            JuMP.NodeData(JuMP._Derivatives.VARIABLE, nvar+1, 1))
+        for i in 3:length(expr.nd)
+            expr.nd[i] = JuMP.NodeData(expr.nd[i].nodetype, expr.nd[i].index, expr.nd[i].parent+1)
+        end
+    end
+    c =  JuMP._NonlinearConstraint(expr, 0.0, Inf)
+    #inner_model.nlp_data.constraint_bounds
+    push!(inner_model.nlp_data.nlconstr, c)
 end

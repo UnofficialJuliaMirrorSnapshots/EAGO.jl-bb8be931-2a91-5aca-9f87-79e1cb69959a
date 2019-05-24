@@ -4,7 +4,7 @@
 Takes an NLP data block structure, linear, quadratic constraints, and
 variable bounds and subsequently builds the relaxed model
 """
-function relax_model!(src::Optimizer,trg,n::NodeBB,r::RelaxationScheme; load::Bool = false)
+function relax_model!(src::Optimizer, trg, n::NodeBB, r::RelaxationScheme, xpnt::Vector{Float64}; load::Bool = false)
 
     if load
         #println("during load")
@@ -29,7 +29,7 @@ function relax_model!(src::Optimizer,trg,n::NodeBB,r::RelaxationScheme; load::Bo
                                             src.nlp_data.has_objective)
                 MOI.set(trg, MOI.NLPBlock(), nlp_data)
             else
-                midpoint_affine!(src,trg,n,r)
+                midpoint_affine!(src,trg,n,r,xpnt)
             end
         end
     end

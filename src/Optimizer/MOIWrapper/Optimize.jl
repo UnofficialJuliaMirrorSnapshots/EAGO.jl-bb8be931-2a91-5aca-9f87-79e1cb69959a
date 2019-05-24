@@ -2,7 +2,74 @@ function triv_function(x) end
 
 linear_solve!(m::Optimizer) = (println("Linear solve to be implemented. Recommend using linear solver such as GLPK directly. EAGO will continue..."))
 
+function initialize_evaluators!(m::Optimizer, flag::Bool)
+
+    #println("m.nlp_data.constraint_bounds: $(m.nlp_data.constraint_bounds)")
+    num_nlp_constraints = length(m.nlp_data.constraint_bounds)
+
+    # Build the JuMP NLP evaluator
+    evaluator = m.nlp_data.evaluator
+    features = MOI.features_available(evaluator)
+    has_hessian = (:Hess in features)
+    init_feat = [:Grad, :ExprGraph]
+    #has_hessian && push!(init_feat, :Hess)
+    num_nlp_constraints > 0 && push!(init_feat, :Jac)
+    m.debug1 = evaluator.m.nlp_data
+    #nldata = evaluator.m.nlp_data
+    #nlobj = evaluator.m.nlp_data.nlobj
+    #println("nldata: $nldata")
+    #println("nlobj: $nlobj")
+
+    MOI.initialize(evaluator,init_feat)
+
+    # Creates initial nlp evaluator
+    m.working_evaluator_block = m.nlp_data
+    if ~isa(m.nlp_data.evaluator, EAGO.EmptyNLPEvaluator) || false #flag
+        built_evaluator = build_nlp_evaluator(MC{m.variable_number}, m.nlp_data.evaluator, m, false)
+        (m.optimization_sense == MOI.MAX_SENSE) && neg_objective!(built_evaluator)
+        m.working_evaluator_block = MOI.NLPBlockData(m.nlp_data.constraint_bounds, built_evaluator, m.nlp_data.has_objective)
+    end
+    evaluator
+end
+
+function label_fixed_variables!(m::Optimizer)
+    lbd = -Inf
+    ubd = Inf
+    for i in 1:m.variable_number
+        lbd = m.variable_info[i].lower_bound
+        ubd = m.variable_info[i].upper_bound
+        if (lbd == ubd)
+            m.variable_info[i].is_fixed = true
+            m.fixed_variable[i] = true
+        end
+    end
+end
+
+function label_obbt_variables!(m::Optimizer)
+    if ~in(true, values(m.nonlinear_variable))
+        linear_solve!(m)
+    end
+    for i=1:length(m.variable_info)
+        if m.nonlinear_variable[i]
+            push!(m.obbt_variables, MOI.VariableIndex(i))
+        end
+    end
+end
+
+function bld_user_upper_fact!(m::Optimizer)
+    MOI.add_variables(m.initial_upper_optimizer, m.variable_number)
+    m.upper_variables = MOI.add_variables(m.working_upper_optimizer, m.variable_number)
+    set_local_nlp!(m)
+end
+
+function user_reformed_optimizer(m::Optimizer)
+    deepcopy(backend(m.nlp_data.evaluator.m).optimizer.model.optimizer)
+end
+
 function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_args = (1,))
+
+
+    setrounding(Interval, m.rounding_mode)
 
     ########### Reformulate DAG using auxilliary variables ###########
     NewVariableSize = length(m.variable_info)
@@ -23,69 +90,31 @@ function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_arg
     m.storage_index_to_variable = ReverseDict(m.variable_index_to_storage)
 
     # Get various other sizes
-    num_nlp_constraints = length(m.nlp_data.constraint_bounds)
     m.continuous_solution = zeros(Float64,NewVariableSize)
 
-    # Sets any unset functions to default values
-    set_to_default!(m)
+    set_to_default!(m)                             # Sets any unset functions to default values
+    initialize_evaluators!(m, false)                      # initializes the EAGO and JuMP NLP evaluators
 
-    # Create initial node and add it to the stack
-    create_initial_node!(m)
-
-    # Build the JuMP NLP evaluator
-    evaluator = m.nlp_data.evaluator
-    features = MOI.features_available(evaluator)
-    has_hessian = (:Hess in features)
-    init_feat = [:Grad]
-    #has_hessian && push!(init_feat, :Hess)
-    num_nlp_constraints > 0 && push!(init_feat, :Jac)
-    MOI.initialize(evaluator,init_feat)
-
-    # Checks for univariate and bivariate quadratics and adds them to specialized storage
-    #classify_quadratics!(m)
-
-    # Creates initial nlp evaluator
-    m.working_evaluator_block = m.nlp_data
-    if ~isa(m.nlp_data.evaluator, EAGO.EmptyNLPEvaluator)
-        built_evaluator = build_nlp_evaluator(MC{m.variable_number}, m.nlp_data.evaluator, m, false)
-        (m.optimization_sense == MOI.MAX_SENSE) && neg_objective!(built_evaluator)
-        m.working_evaluator_block = MOI.NLPBlockData(m.nlp_data.constraint_bounds, built_evaluator, m.nlp_data.has_objective)
-    end
-
-    # eliminate redundant expressions & flatten
-    m.reform_epigraph_flag && reform_epigraph!(m)
-    #m.reform_cse_flag && dag_cse_simplify!(m)
+    m.reform_epigraph_flag && reform_epigraph!(m)  # perform epigraph rearrangement
+    #m.reform_cse_flag && dag_cse_simplify!(m)      #
     #m.reform_flatten_flag && dag_flattening!(m)
+
+    #m = user_reformed_optimizer(m)
+    #m.debug1 = initialize_evaluators!(m, true)                      # re-initializes evaluators after reformulations are performed
+
+    create_initial_node!(m)                        # Create initial node and add it to the stack
 
     m.upper_variables = MOI.add_variables(m.initial_relaxed_optimizer, m.variable_number)
     m.lower_variables = MOI.VariableIndex.(1:m.variable_number)
 
     ###### OBBT Setup #####
-    # Label fixed variables:
-    lbd = -Inf
-    ubd = Inf
-    for i in 1:m.variable_number
-        lbd = m.variable_info[i].lower_bound
-        ubd = m.variable_info[i].upper_bound
-        if (lbd == ubd)
-            m.variable_info[i].is_fixed = true
-            m.fixed_variable[i] = true
-        end
-    end
-
-    # Sets terms that OBBT will be performed on & nonlinear variables
-    label_nonlinear_variables!(m, evaluator)
-    if ~in(true, values(m.nonlinear_variable))
-        linear_solve!(m)
-    end
-    for i=1:NewVariableSize
-        if m.nonlinear_variable[i]
-            push!(m.obbt_variables, MOI.VariableIndex(i))
-        end
-    end
+    label_fixed_variables!(m)                                   # label variable fixed to a value
+    label_nonlinear_variables!(m, m.nlp_data.evaluator)
+    label_obbt_variables!(m)
 
     # Relax initial model terms
-    relax_model!(m, m.initial_relaxed_optimizer, m.stack[1], m.relaxation, load = true)
+    xmid = 0.5*(lower_variable_bounds(m.stack[1]) + upper_variable_bounds(m.stack[1]))
+    relax_model!(m, m.initial_relaxed_optimizer, m.stack[1], m.relaxation, xmid, load = true)
 
     # Runs a customized function if one is provided
     m.custom_mod_flag = (custom_mod! != triv_function)
@@ -93,14 +122,10 @@ function MOI.optimize!(m::Optimizer; custom_mod! = triv_function, custom_mod_arg
         custom_mod!(m, custom_mod_args)
     end
 
-    # if optimizer type is supplied for upper, build factory
-    if (~m.use_upper_factory)
-        MOI.add_variables(m.initial_upper_optimizer, m.variable_number)
-        m.upper_variables = MOI.add_variables(m.working_upper_optimizer, m.variable_number)
-        set_local_nlp!(m)
-    end
+    (~m.use_upper_factory) && bld_user_upper_fact!(m) # if optimizer type is supplied for upper, build factory
 
-    println("start nlp solve")
+    #println("start nlp solve")
+    #println("start nlp solve m.fixed_variable = $(m.fixed_variable)")
     # Runs the branch and bound routine
     solve_nlp!(m)
 end

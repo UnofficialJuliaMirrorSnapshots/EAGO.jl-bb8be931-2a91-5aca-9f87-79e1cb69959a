@@ -14,7 +14,7 @@
 - gSIPExp: Expression for semi-infinite inequality constraint
 - hSIPExp: Expression for semi-infinite equality constraints
 """
-mutable struct SIPOptions
+mutable struct SIP_Options
   lower_disc_set::Vector{Vector{Float64}}
   upper_disc_set::Vector{Vector{Float64}}
   tolerance::Float64
@@ -24,17 +24,15 @@ mutable struct SIPOptions
   return_hist::Bool
   header_interval::Int
   print_interval::Int
-  lower_level_optimizer
-  lower_problem_optimizer
-  upper_problem_optimizer
   verbosity::String
   inner_tolerance::Float64
+  model
 end
-SIPOptions() = SIPOptions(Vector{Float64}[], Vector{Float64}[], 1E-3, 5, 0.9, 2.0,
-                        false, 20, 1, Optimizer, Optimizer, Optimizer, "Normal", 1.0E-8)
+SIP_Options() = SIP_Options(Vector{Float64}[], Vector{Float64}[], 1E-3, 5, 0.9,
+                            2.0, false, 20, 1, "Normal", 1.0E-8, Model())
 
 """
-    SIPResult
+    SIP_Result
 --------------------------------------------------------------------------------
 Description:
 Composite type for storing the resulting form SIP solution routine.
@@ -50,7 +48,7 @@ UBP_time      Float64 - Time spent solving the upper bounding problem (sec)
 xbar          Array{Float64} - Solution point
 --------------------------------------------------------------------------------
 """
-mutable struct SIPResult
+mutable struct SIP_Result
     iteration_number::Int
     upper_bound::Float64
     lower_bound::Float64
@@ -61,14 +59,14 @@ mutable struct SIPResult
     x_bar::Vector{Float64}
     p_bar::Vector{Float64}
 end
-SIPResult() = SIPResult(1, Inf, -Inf, true, 0.0, 0.0, 0.0, Float64[], Float64[])
+SIP_Result() = SIP_Result(1, Inf, -Inf, true, 0.0, 0.0, 0.0, Float64[], Float64[])
 
 """
-    SIPProblemStorage
+    SIP_Problem_Storage
 
 Storage to pass problem information and solution routine options.
 """
-mutable struct SIPProblemStorage
+mutable struct SIP_Problem_Storage
   f::Function
   gSIP::Function
   x_l::Vector{Float64}
@@ -78,7 +76,7 @@ mutable struct SIPProblemStorage
 
   np::Int
   nx::Int
-  opts::SIPOptions
+  opts::SIP_Options
 
   h
   hj

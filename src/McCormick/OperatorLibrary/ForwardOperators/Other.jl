@@ -146,6 +146,10 @@ function intersect(x::MC{N}, y::MC{N}) where N
     else
       cv = y.cv
       cv_grad = y.cv_grad
+			if (x.cc < y.cv)
+				cc = y.cv
+				cc_grad = zero(x.cc_grad)
+			end
     end
     # Concave terms
     if (x.cc <= y.cc)
@@ -154,33 +158,51 @@ function intersect(x::MC{N}, y::MC{N}) where N
     else
       cc = y.cc
       cc_grad = y.cc_grad
+			if (x.cv > y.cc)
+				cv = y.cc
+				cv_grad = zero(x.cc_grad)
+			end
     end
     return MC{N}(cv, cc, intersect(x.Intv,y.Intv), cv_grad, cc_grad, (x.cnst && y.cnst))
   end
 end
 
 function intersect(x::MC{N}, y::IntervalType) where N
-  if (MC_param.mu >= 1)
-    max_MC = x - max(x - y, 0.0)   # used for convex
-    min_MC = y - max(y - x, 0.0)   # used for concave
-    return MC{N}(max_MC.cv, min_MC.cc, intersect(Intv(x),y), max_MC.cv_grad, min_MC.cc_grad, (x.cnst && y.cnst))
-  else
-    # Convex terms
-    if (x.cv >= lo(y))
-      cv = x.cv
-      cv_grad = x.cv_grad
-    else
-      cv = lo(y)
-      cv_grad = zero(x.cv_grad)
-    end
-    # Concave terms
-    if (x.cc <= hi(y))
-      cc = x.cc
-      cc_grad = x.cc_grad
-    else
-      cc = hi(y)
-      cc_grad = zero(x.cc_grad)
-    end
+    if (MC_param.mu >= 1)
+        max_MC = x - max(x - y, 0.0)   # used for convex
+    		min_MC = y - max(y - x, 0.0)   # used for concave
+    		return MC{N}(max_MC.cv, min_MC.cc, intersect(Intv(x),y), max_MC.cv_grad, min_MC.cc_grad, (x.cnst && y.cnst))
+  	else
+    	println("ran intersect 1")
+			println("x: $x")
+			println("y: $y")
+    	# Convex terms
+    	if (x.cv >= lo(y))
+      	cv = x.cv
+      	cv_grad = x.cv_grad
+    	else
+      	cv = lo(y)
+	  		cc = x.cc
+      	cv_grad = zero(x.cv_grad)
+	  		if (cc < lo(y))
+		  		cc = lo(y)
+		  		cc_grad = zero(x.cc_grad)
+	  		end
+    	end
+    	# Concave terms
+    	if (x.cc <= hi(y))
+      	cc = x.cc
+      	cc_grad = x.cc_grad
+    	else
+	  		cv = x.cv
+      	cc = hi(y)
+      	cc_grad = zero(x.cc_grad)
+	  		if (hi(y) < cv)
+		  		cv = hi(y)
+		  		cv_grad = zero(x.cc_grad)
+	  		end
+    	end
+		println("ran intersect 1: $(MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst)))")
     return MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst))
   end
 end

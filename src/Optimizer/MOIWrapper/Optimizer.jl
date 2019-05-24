@@ -166,6 +166,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     obbt_working_lower_index::Vector{MOI.VariableIndex}
     obbt_working_upper_index::Vector{MOI.VariableIndex}
     obbt_active_current::Bool
+    obbt_performed_flag::Bool
 
     # Duality-Based Bound Tightening (DBBT) Options
     dbbt_depth::Int
@@ -176,6 +177,15 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     cp_reptitions::Int
     cp_tolerance::Float64
     evaluation_reverse::Bool
+
+    # Rounding mode (interval arithmetic options)
+    rounding_mode::Symbol
+
+    cut_max_iterations::Int
+    cut_tolerance::Float64
+
+    # Subgradient Tightening Flag
+    subgrad_tighten::Bool
 
     # Options for Poor Man's LP
     poor_man_lp_depth::Int
@@ -200,6 +210,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     # Cutting Plane Options
     cut_iterations::Int
+    cut_add_flag::Bool
     mid_cvx_factor::Float64
 
     # Status flags
@@ -246,7 +257,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:verbosity] = 4
         default_opt_dict[:warm_start] = false
         default_opt_dict[:output_iterations] = 1
-        default_opt_dict[:header_iterations] = 1000
+        default_opt_dict[:header_iterations] = 10
         default_opt_dict[:digits_displayed] = 3
         default_opt_dict[:return_history] = false
         default_opt_dict[:flag_subsolver_errors] = true
@@ -256,8 +267,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:dbbt_tolerance] = 1E-8
 
         # Optimality-based bound tightening parameters
-        default_opt_dict[:obbt_depth] = 50
-        default_opt_dict[:obbt_aggressive_on] = true
+        default_opt_dict[:obbt_depth] = 0
+        default_opt_dict[:obbt_aggressive_on] = false
         default_opt_dict[:obbt_aggressive_max_iteration] = 2
         default_opt_dict[:obbt_aggressive_min_dimension] = 2
         default_opt_dict[:obbt_tolerance] = 1E-9
@@ -268,6 +279,15 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:cp_reptitions] = 10
         default_opt_dict[:cp_tolerance] = 0.99
         default_opt_dict[:evaluation_reverse] = false
+
+        # Cutting Options
+        default_opt_dict[:cut_max_iterations] = 10
+
+        # Interval options
+        default_opt_dict[:rounding_mode] = :accurate
+
+        # Subgradient tightening options
+        default_opt_dict[:subgrad_tighten] = true
 
         # Feasibility-Based Bound Tightening for Quadratics
         default_opt_dict[:univariate_quadratic_depth] = 0
@@ -284,8 +304,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:poor_man_lp_reptitions] = 1
 
         # Upper Bounding Interval
-        default_opt_dict[:upper_bounding_interval] = 100
-        default_opt_dict[:upper_bounding_depth] = 2
+        default_opt_dict[:upper_bounding_interval] = 10
+        default_opt_dict[:upper_bounding_depth] = 10
         default_opt_dict[:upper_bnd_ni_tol] = 3
 
         # Termination Limits
@@ -301,8 +321,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
         # Problem Reformulation Options
         default_opt_dict[:reform_epigraph_flag] = false
-        default_opt_dict[:reform_cse_flag] = true
-        default_opt_dict[:reform_flatten_flag] = true
+        default_opt_dict[:reform_cse_flag] = false
+        default_opt_dict[:reform_flatten_flag] = false
 
         for i in keys(default_opt_dict)
             if (haskey(options,i))
@@ -364,6 +384,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         m.linear_number = 0
         m.quadratic_number = 0
         m.cut_iterations = 0
+        m.cut_add_flag = true
 
         m.constraint_convexity = Dict{MOI.ConstraintIndex,Bool}()
         m.variable_index_to_storage = Dict{Int,Int}()
@@ -432,6 +453,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         m.failed_solver = NO_FAILURE
 
         # Optimality-Based Bound Tightening (OBBT) Storage
+        m.obbt_performed_flag = false
         m.obbt_variables = MOI.VariableIndex[]
         m.obbt_working_lower_index = MOI.VariableIndex[]
         m.obbt_working_upper_index = MOI.VariableIndex[]

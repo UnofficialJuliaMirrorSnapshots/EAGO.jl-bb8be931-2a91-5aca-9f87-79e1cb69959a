@@ -61,10 +61,10 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
     low_delete = Int[]
     upp_delete = Int[]
     for i in new_low_index
-        (y.lower_variable_bounds[i.value] != -Inf) && push!(low_delete,i.value)
+        (y.lower_variable_bounds[i.value] != -Inf) && push!(low_delete, i.value)
     end
     for i in new_upp_index
-        (y.upper_variable_bounds[i.value] != Inf) && push!(upp_delete,i.value)
+        (y.upper_variable_bounds[i.value] != Inf) && push!(upp_delete, i.value)
     end
     deleteat!(new_low_index, low_delete); low_delete = Int[]
     deleteat!(new_upp_index, upp_delete); upp_delete = Int[]
@@ -140,8 +140,8 @@ function calculate_initial_relaxation!(x::Optimizer, y::NodeBB)
 
     # relax functions
     update_lower_variable_bounds1!(x, y, x.working_relaxed_optimizer)
-    x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, load = true)
-    x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, load = false)
+    x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, xpnt, load = true)
+    x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, xpnt, load = false)
 
     MOI.set(x.working_relaxed_optimizer, MOI.ObjectiveSense(), MOI.FEASIBILITY_SENSE)
     MOI.optimize!(x.working_relaxed_optimizer)
@@ -161,9 +161,10 @@ function calculate_single_variable_relaxation!(opt::Optimizer, y::NodeBB, vari::
     end
 
     # relax functions
+    xmid = 0.5*(lower_variable_bounds(y) + upper_variable_bounds(y))
     update_lower_variable_bounds1!(opt, y, opt.working_relaxed_optimizer)
-    opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, load = true)
-    opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, load = false)
+    opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, xmid, load = true)
+    opt.relax_function!(opt, opt.working_relaxed_optimizer, y, opt.relaxation, xmid, load = false)
 
     # set objectives
     var = MOI.SingleVariable(vari)

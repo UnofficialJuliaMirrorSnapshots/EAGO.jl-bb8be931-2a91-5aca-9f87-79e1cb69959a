@@ -19,7 +19,7 @@ import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
                            ∩, IntervalBox, pi_interval, bisect, isdisjoint, length,
                            atan, asin, acos,
                            sind, cosd, tand, asind, acosd, atand,
-                           secd, cscd, cotd, asecd, acscd, acotd
+                           secd, cscd, cotd, asecd, acscd, acotd, half_pi, setrounding
 
 import IntervalContractors: plus_rev, mul_rev, min_rev, max_rev, minus_rev, div_rev, exp_rev,
        exp2_rev, exp10_rev, expm1_rev, log_rev, log2_rev, log10_rev,
@@ -65,6 +65,11 @@ export grad, zgrad, ∩, mid3, MC_param, mid_grad, seed_g, line_seg, dline_seg,
 =#
 export mc_opts, gen_expansion_params, gen_expansion_params!, implicit_relax_h,
        implicit_relax_h!, implicit_relax_f, implicit_relax_fg
+
+
+function __init__()
+      setrounding(Interval, :accurate)
+end
 
 include("convexity_rules.jl")
 

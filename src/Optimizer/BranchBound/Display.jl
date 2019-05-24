@@ -80,9 +80,15 @@ Prints the results of a single bounding problem.
 function print_results!(B::Optimizer,lbd_bool::Bool)
   if (B.verbosity > 1)
     if (lbd_bool)
-      println("Lower Bound: $(B.current_lower_info.value), Solution: $(B.current_lower_info.solution), Feasibility: $(B.current_lower_info.feasibility)")
+      println("Lower Bound (First Iteration): $(B.current_lower_info.value), Solution: $(B.current_lower_info.solution), Feasibility: $(B.current_lower_info.feasibility)")
     else
       println("Upper Bound: $(B.current_upper_info.value), Solution: $(B.current_upper_info.solution), Feasibility: $(B.current_upper_info.feasibility)")
     end
+  end
+end
+
+function print_results_post_cut!(B::Optimizer)
+  if (B.verbosity > 1)
+    println("Lower Bound (Last Iteration): $(B.current_lower_info.value), Solution: $(B.current_lower_info.solution), Feasibility: $(B.current_lower_info.feasibility)")
   end
 end

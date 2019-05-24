@@ -4,11 +4,12 @@
 Creates reverse McCormick contractor for `a` = `b` +`c`
 """
 function plus_rev(a::MC, b::MC, c::MC)  # a = b + c
+    bold = b
     b = b ∩ (a - c)
-    c = c ∩ (a - b)
-    a,b,c
+    c = c ∩ (a - bold)
+    a, b, c
 end
-plus_rev(a,b,c) = plus_rev(promote(a,b,c)...)
+#plus_rev(a,b,c) = plus_rev(promote(a,b,c)...)
 
 """
     minus_rev
@@ -16,13 +17,17 @@ plus_rev(a,b,c) = plus_rev(promote(a,b,c)...)
 Creates reverse McCormick contractor for `a` = `b`- `c`
 """
 function minus_rev(a::MC, b::MC, c::MC)  # a = b - c
+    bold = b
     b = b ∩ (a + c)
-    c = c ∩ (b - a)
-    a,b,c
+    c = c ∩ (bold - a)
+    a, b, c
 end
-minus_rev(a::MC, b::MC) = (b = -a; return (a, b))     # a = -b
-minus_rev(a,b,c) = minus_rev(promote(a,b,c)...)
-minus_rev(a,b) = minus_rev(promote(a,b)...)
+function minus_rev(a::MC, b::MC)  # a = -b
+    b = b ∩ -a
+    return a, b
+end
+#minus_rev(a,b,c) = minus_rev(promote(a,b,c)...)
+#minus_rev(a,b) = minus_rev(promote(a,b)...)
 
 """
     mul_rev
@@ -30,6 +35,7 @@ minus_rev(a,b) = minus_rev(promote(a,b)...)
 Creates reverse McCormick contractor for `a` = `b`*`c`
 """
 function mul_rev(a::MC, b::MC, c::MC)  # a = b * c
+    #=
     bflag = (0.0 ∉ b.Intv)
     if bflag
         temp1 = a / b
@@ -40,6 +46,7 @@ function mul_rev(a::MC, b::MC, c::MC)  # a = b * c
         temp2 = a / c
         ((0.0 ∉ a.Intv) || cflag) && (b = b ∩ temp2)
     end
+    =#
     a,b,c
 end
 mul_rev(a::MC{N},b::MC{N},c::Float64) where N = mul_rev(a,b,MC{N}(c))
@@ -51,11 +58,15 @@ mul_rev(a::MC{N},b::Float64,c::MC{N}) where N = mul_rev(a,MC{N}(b),c)
 Creates reverse McCormick contractor for `a` = `b`/`c`
 """
 function div_rev(a::MC, b::MC, c::MC)  # a = b / c
+    #=
     b = b ∩ (a * c)
-    c = c ∩ (b / a)
+    if (~isempty(b) && ~in(0.0, a.Intv))
+        c = c ∩ (b / a)
+    end
+    =#
     a,b,c
 end
-div_rev(a,b,c) = div_rev(promote(a,b,c)...)
+#div_rev(a,b,c) = div_rev(promote(a,b,c)...)
 
 """
     inv_rev
@@ -74,11 +85,11 @@ inv_rev(a,b) = inv_rev(promote(a,b)...)
 Creates reverse McCormick contractor for `a` = `b`^`c`
 """
 function pow_rev(a::MC, b::MC, c::MC)  # a = b^c
+    #=
     if (~isempty(b) && ~isempty(c))
         ~in(0.0, c.Intv) && (b = b ∩ (a^(inv(c))))
         if ~in(0.0, a.Intv)
-            println("b: $b")
-            if (b.Intv.lo > 0.0)
+            if (0.0 < b.Intv.lo < Inf)
                 blog = log(b)
                 if ~in(0.0, blog.Intv)
                     c = c ∩ (log(a) / blog)
@@ -88,6 +99,7 @@ function pow_rev(a::MC, b::MC, c::MC)  # a = b^c
     else
         a = empty(a)
     end
+    =#
     a,b,c
 end
 pow_rev(a, b, c) = pow_rev(promote(a, b, c)...)
@@ -99,16 +111,10 @@ pow_rev(a, b, c) = pow_rev(promote(a, b, c)...)
 Creates reverse McCormick contractor for `a` = `sqrt(b)`
 """
 function sqrt_rev(a::MC, b::MC)  # a = sqrt(b)
-    b = b ∩ (a^2)
+    #b = b ∩ (a^2)
     a,b
 end
-
-"""
-    sqr_rev
-
-Creates reverse McCormick contractor for `a` = `sqrt(b)`
-"""
-sqr_rev(f, x)  = pow_rev(f,x,2)
+#sqr_rev(f, x)  = pow_rev(f,x,2)
 
 
 """

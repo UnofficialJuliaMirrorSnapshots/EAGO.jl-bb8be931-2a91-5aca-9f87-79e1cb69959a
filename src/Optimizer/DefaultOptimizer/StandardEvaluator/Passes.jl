@@ -3,11 +3,11 @@
 
 Construct the set-valued relaxation of variable `i` of `N` in `node` at `x_values`.
 """
-function set_value_construct(i::Int,N::Int,x_values::Vector{Float64},node::NodeBB)
+function set_value_construct(i::Int, N::Int, x_values::Vector{Float64}, node::NodeBB)
     @inbounds xval = x_values[i]
-    @inbounds intv = IntervalType(node.lower_variable_bounds[i],node.upper_variable_bounds[i])
-    seed = seed_gradient(Float64,i,N)
-    @inbounds MC{N}(xval, xval,intv,seed,seed,false)
+    @inbounds intv = IntervalType(node.lower_variable_bounds[i], node.upper_variable_bounds[i])
+    seed = seed_gradient(Float64, i, N)
+    @inbounds MC{N}(xval, xval, intv, seed, seed, false)
 end
 
 """
@@ -16,26 +16,30 @@ end
 Post process set_value operator. By default, performs the affine interval cut on
 a MC structure.
 """
-function set_value_post(x_values::Vector{Float64},val::MC{N},node::NodeBB) where N
-    lower = val.cv
-    upper = val.cc
-    for i in 1:N
-        @inbounds cv_val = val.cv_grad[i]
-        @inbounds cc_val = val.cc_grad[i]
-        if (cv_val > 0.0)
-            @inbounds lower += cv_val*(node.lower_variable_bounds[i]-x_values[i])
-        else
-            @inbounds lower += cv_val*(node.upper_variable_bounds[i]-x_values[i])
+function set_value_post(x_values::Vector{Float64}, val::MC{N}, node::NodeBB, flag::Bool) where N
+    if flag
+        lower = val.cv
+        upper = val.cc
+        for i in 1:N
+            @inbounds cv_val = val.cv_grad[i]
+            @inbounds cc_val = val.cc_grad[i]
+            if (cv_val > 0.0)
+                @inbounds lower += cv_val*(node.lower_variable_bounds[i] - x_values[i])
+            else
+                @inbounds lower += cv_val*(node.upper_variable_bounds[i] - x_values[i])
+            end
+            if (cc_val > 0.0)
+                @inbounds upper += cc_val*(node.upper_variable_bounds[i] - x_values[i])
+            else
+                @inbounds upper += cc_val*(node.lower_variable_bounds[i] - x_values[i])
+            end
         end
-        if (cc_val > 0.0)
-            @inbounds upper += cc_val*(node.upper_variable_bounds[i]-x_values[i])
-        else
-            @inbounds upper += cc_val*(node.lower_variable_bounds[i]-x_values[i])
-        end
+        lower = max(lower, lo(val))
+        upper = min(upper, hi(val))
+        return MC{N}(val.cv, val.cc, IntervalType(lower,upper), val.cv_grad, val.cc_grad, val.cnst)
+    else
+        return val
     end
-    lower = max(lower,lo(val))
-    upper = min(upper,hi(val))
-    return MC{N}(val.cv, val.cc, IntervalType(lower,upper), val.cv_grad, val.cc_grad, val.cnst)
 end
 #set_value_post(x_values::Vector{Float64},val::MC{N},node::NodeBB) where N = val
 
@@ -61,12 +65,16 @@ const PRINT_EVAL = false
 
 function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, numvalued::Vector{Bool},
                       nd::AbstractVector{JuMP.NodeData}, adj, const_values, parameter_values, current_node::NodeBB,
-                      x_values::Vector{Float64}, subexpr_values_flt, subexpr_values_set, subexpression_isnum::Vector{Bool}, user_input_buffer;
-                      user_operators::JuMP._Derivatives.UserOperatorRegistry=JuMP._Derivatives.UserOperatorRegistry()) where T
+                      x_values::Vector{Float64}, subexpr_values_flt, subexpr_values_set, subexpression_isnum::Vector{Bool},
+                      user_input_buffer, subgrad_tighten::Bool, first_eval_flag::Bool;
+                      user_operators::JuMP._Derivatives.UserOperatorRegistry = JuMP._Derivatives.UserOperatorRegistry()) where T
+
 
     @assert length(numberstorage) >= length(nd)
     @assert length(setstorage) >= length(nd)
     @assert length(numvalued) >= length(nd)
+
+    set_value_sto = zero(T)
 
     children_arr = rowvals(adj)
     N = length(x_values)
@@ -75,9 +83,21 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
         @inbounds nod = nd[k]
         op = nod.index
         if nod.nodetype == JuMP._Derivatives.VARIABLE
+            #println("node type: Variable[$op], setstorage[$k]: $(setstorage[k])")
             PRINT_EVAL && println("k: $k, node type: Variable[$op]")
             PRINT_EVAL && println("x_MC{$k}, $(set_value_construct(nod.index,N,x_values,current_node))")
-            setstorage[k] = set_value_construct(nod.index,N,x_values,current_node)
+            set_value_sto = set_value_construct(nod.index, N, x_values, current_node)
+            #println("k: $k, node type: Variable[$op]")
+            #println("k: $k, set_value_sto = $(set_value_sto)")
+            #println("k: $k, setstorage[k] = $(setstorage[k]) PRE CONSTRUCT")
+            if first_eval_flag
+                #println("build variable from box")
+                setstorage[k] = set_value_sto
+            else
+                #println("build variable from box intersection")
+                setstorage[k] = set_value_sto ∩ setstorage[k]
+            end
+            #println("k: $k, setstorage[k] = $(setstorage[k]) POST CONSTRUCT")
             numvalued[k] = false
         elseif nod.nodetype == JuMP._Derivatives.VALUE
             PRINT_EVAL && println("k: $k, node type: Constant = $(const_values[nod.index])")
@@ -150,7 +170,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                 if (isnum)
                     numberstorage[k] = tmp_sub
                 else
-                    setstorage[k] = set_value_post(x_values, tmp_sub, current_node)
+                    setstorage[k] = set_value_post(x_values, tmp_sub, current_node, subgrad_tighten)
                 end
             elseif op == 3 # :*
                 tmp_prod = 1.0
@@ -170,7 +190,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                 if (isnum)
                     numberstorage[k] = tmp_prod
                 else
-                    setstorage[k] = set_value_post(x_values, tmp_prod, current_node)
+                    setstorage[k] = set_value_post(x_values, tmp_prod, current_node, subgrad_tighten)
                 end
                 numvalued[k] = isnum
             elseif op == 4 # :^
@@ -199,7 +219,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                     end
                 else
                     if chdset1 || chdset2
-                        setstorage[k] = set_value_post(x_values, pow(base,exponent), current_node)
+                        setstorage[k] = set_value_post(x_values, pow(base,exponent), current_node, subgrad_tighten)
                     else
                         numberstorage[k] = pow(base,exponent)
                     end
@@ -228,7 +248,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                 if chdset1 && chdset2
                     numberstorage[k] = numerator/denominator
                 else
-                    setstorage[k] = set_value_post(x_values, numerator/denominator, current_node)
+                    setstorage[k] = set_value_post(x_values, numerator/denominator, current_node, subgrad_tighten)
                 end
                 PRINT_EVAL && print_call!(:/, k, children_idx)
                 PRINT_EVAL && println("result: $(numerator/denominator)")
@@ -280,7 +300,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
                 if isnum
                     numberstorage[k] = fval
                 else
-                    setstorage[k] = set_value_post(x_values, fval, current_node)
+                    setstorage[k] = set_value_post(x_values, fval, current_node, subgrad_tighten)
                 end
                 numvalued[k] = isnum
             else
@@ -304,7 +324,7 @@ function forward_eval(setstorage::Vector{T}, numberstorage::Vector{Float64}, num
             if chdset
                 @inbounds numberstorage[k] = fval
             else
-                @inbounds setstorage[k] = set_value_post(x_values, fval, current_node)
+                @inbounds setstorage[k] = set_value_post(x_values, fval, current_node, subgrad_tighten)
             end
             PRINT_EVAL && print_call!(id_to_operator[op], k, child_idx)
             PRINT_EVAL && println("result: $(fval)")
@@ -380,6 +400,7 @@ function forward_eval_obj(d::Evaluator,x)
     subexpr_values_set = d.subexpression_values_set
     user_operators = d.m.nlp_data.user_operators::JuMP._Derivatives.UserOperatorRegistry
     user_input_buffer = d.jac_storage
+    subgrad_tighten = d.subgrad_tighten
 
     PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
     for (ind, k) in enumerate(reverse(d.subexpression_order))
@@ -388,7 +409,8 @@ function forward_eval_obj(d::Evaluator,x)
         temp = forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                                          ex.nd, ex.adj, ex.const_values,
                                          d.parameter_values, d.current_node,
-                                         x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                                         x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
+                                         user_input_buffer, subgrad_tighten,
                                          user_operators=user_operators)
         PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
         d.subexpression_isnum[ind] = ex.numvalued[1]
@@ -402,24 +424,11 @@ function forward_eval_obj(d::Evaluator,x)
     PRINT_EVAL && println("START TO EVALUATE OBJECTIVE")
     if d.has_nlobj
         ex = d.objective
-        println("ex.setstorage: $(ex.setstorage)")
-        println("ex.numberstorage: $(ex.numberstorage)")
-        println("ex.numvalued: $(ex.numvalued)")
-        println("ex.nd: $(ex.nd)")
-        println("ex.adj: $(ex.adj)")
-        println("ex.const_values: $(ex.const_values)")
-        println("d.parameter_values: $(d.parameter_values)")
-        println("d.current_node: $(d.current_node)")
-        println("x: $(x)")
-        println("subexpr_values_flt: $(subexpr_values_flt)")
-        println("subexpr_values_set: $(subexpr_values_set)")
-        println("d.subexpression_isnum: $(d.subexpression_isnum)")
-        println("user_input_buffer: $(user_input_buffer)")
-        println("user_operators: $(user_operators)")
         forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                      ex.nd, ex.adj, ex.const_values,
                      d.parameter_values, d.current_node,
-                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
+                     user_input_buffer, subgrad_tighten,
                      user_operators=user_operators)
     end
 end
@@ -429,15 +438,19 @@ function forward_eval_all(d::Evaluator,x)
     subexpr_values_set = d.subexpression_values_set
     user_operators = d.m.nlp_data.user_operators::JuMP._Derivatives.UserOperatorRegistry
     user_input_buffer = d.jac_storage
+    subgrad_tighten = d.subgrad_tighten
+    first_eval_flag = d.first_eval_flag
 
     PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
     for (ind, k) in enumerate(reverse(d.subexpression_order))
+        #println("subexpression k: $k")
         PRINT_EVAL && println("SUBEXPRESSION NUMBER: #$(ind)")
         ex = d.subexpressions[k]
         temp = forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                                          ex.nd, ex.adj, ex.const_values,
                                          d.parameter_values, d.current_node,
-                                         x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                                         x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
+                                         user_input_buffer, subgrad_tighten, first_eval_flag,
                                          user_operators=user_operators)
         PRINT_EVAL && println("START TO EVALUATE SUBEXPRESSIONS")
         d.subexpression_isnum[ind] = ex.numvalued[1]
@@ -446,26 +459,33 @@ function forward_eval_all(d::Evaluator,x)
         else
             d.subexpression_values_set[k] = temp
         end
+        #println("ex.setstorage: $(ex.setstorage)")
     end
 
     PRINT_EVAL && println("START TO EVALUATE OBJECTIVE")
     if d.has_nlobj
+        #println("FORWARD OBJECTIVE")
         ex = d.objective
         forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                      ex.nd, ex.adj, ex.const_values,
                      d.parameter_values, d.current_node,
-                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                     x, subexpr_values_flt, subexpr_values_set,
+                     d.subexpression_isnum, user_input_buffer, subgrad_tighten, first_eval_flag,
                      user_operators=user_operators)
+        #println("ex.setstorage: $(ex.setstorage)")
     end
 
     PRINT_EVAL && println("START TO EVALUATE CONSTRAINTS")
     for (ind,ex) in enumerate(d.constraints)
+        #println("FORWARD CONSTRAINT NUMBER: #$(ind)")
         PRINT_EVAL && println("CONSTRAINT NUMBER: #$(ind)")
         forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                      ex.nd, ex.adj, ex.const_values,
                      d.parameter_values, d.current_node,
-                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum, user_input_buffer,
+                     x, subexpr_values_flt, subexpr_values_set,
+                     d.subexpression_isnum, user_input_buffer, subgrad_tighten, first_eval_flag,
                      user_operators=user_operators)
+        #println("ex.setstorage: $(ex.setstorage)")
     end
 end
 
@@ -473,7 +493,7 @@ end
 # remaining terms not reversed
 const MAX_ASSOCIATIVE_REVERSE = 4
 function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpression_isnum,
-                      subexpr_values_set, nd::Vector{JuMP.NodeData}, adj, x_values) where T
+                      subexpr_values_set, nd::Vector{JuMP.NodeData}, adj, x_values, current_node::NodeBB, subgrad_tighten::Bool) where T
 
     @assert length(setstorage) >= length(nd)
     @assert length(numberstorage) >= length(nd)
@@ -482,17 +502,22 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
     children_arr = rowvals(adj)
     N = length(x_values)
 
+    tmp_hold = zero(T)
     continue_flag = true
 
-    for k in 2:length(nd)
+    for k in 1:length(nd)
+        println("node evaluation list number = $k")
         @inbounds nod = nd[k]
         if (nod.nodetype == JuMP._Derivatives.VALUE ||
             nod.nodetype == JuMP._Derivatives.LOGIC ||
             nod.nodetype == JuMP._Derivatives.COMPARISON ||
             nod.nodetype == JuMP._Derivatives.PARAMETER ||
-            nod.nodetype == JuMP._Derivatives.EXTRA ||
-            nod.nodetype == JuMP._Derivatives.VARIABLE)
+            nod.nodetype == JuMP._Derivatives.EXTRA )
             continue
+        elseif nod.nodetype == JuMP._Derivatives.VARIABLE
+            op = nod.index
+            @inbounds current_node.lower_variable_bounds[op] = setstorage[k].Intv.lo
+            @inbounds current_node.upper_variable_bounds[op] = setstorage[k].Intv.hi
         elseif nod.nodetype == JuMP._Derivatives.SUBEXPRESSION
             @inbounds isnum = subexpression_isnum[nod.index]
             if ~isnum
@@ -504,116 +529,174 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
             op = nod.index
             parent_index = nod.parent
             @inbounds children_idx = nzrange(adj,k)
-            @inbounds parent_value = setstorage[parent_index]
+            @inbounds parent_value = setstorage[k]
+            println("parent_value: $parent_value")
             n_children = length(children_idx)
             if (op >= JuMP._Derivatives.USER_OPERATOR_ID_START)
                 continue
             elseif (op == 1) # :+
+                println("op is +")
                 PRINT_EVAL && print_call!(:plus_rev, k, children_idx)
-                tmp_sum = 0.0
-                tmp_hold = 0.0
-                chdset = true
-                count = 0
-                for c_idx in children_idx
-                    if (count < MAX_ASSOCIATIVE_REVERSE)
-                        if ~numvalued[c_idx]
-                            tmp_sum = 0.0; tmp_hold = 0.0
-                            for cin_idx in children_idx
-                                if (cin_idx != c_idx)
-                                    @inbounds ix = children_arr[cin_idx]
-                                    @inbounds chdset = numvalued[cin_idx]
-                                    if (chdset)
-                                        @inbounds tmp_sum += numberstorage[ix]
-                                    else
-                                        @inbounds tmp_sum += setstorage[ix]
-                                    end
-                                end
-                            end
-                            @inbounds ix = children_arr[c_idx]
-                            @inbounds chdset = numvalued[c_idx]
-                            if (chdset)
-                                @inbounds tmp_hold += numberstorage[ix]
-                            else
-                                @inbounds tmp_hold += setstorage[ix]
-                            end
-                            pnew, xhold, xsum = plus_rev(parent_value, tmp_hold, tmp_sum)
-                            isempty(pnew) && (continue_flag = false)
-                            setstorage[parent_index] = pnew
-                            setstorage[ix] = xhold
-                            count += 1
+                lenx = length(children_idx)
+                if lenx == 2
+                    @inbounds child1 = first(children_idx)
+                    @inbounds child2 = last(children_idx)
+                    @inbounds ix1 = children_arr[child1]
+                    @inbounds ix2 = children_arr[child2]
+                    @inbounds chdset1 = numvalued[ix1]
+                    @inbounds chdset2 = numvalued[ix2]
+                    @inbounds nsto1 = numberstorage[ix1]
+                    @inbounds nsto2 = numberstorage[ix2]
+                    @inbounds ssto1 = setstorage[ix1]
+                    @inbounds ssto2 = setstorage[ix2]
+                    if (chdset1 && ~chdset2)
+                        pnew, xhold, xsum = plus_rev(parent_value, nsto1, ssto2)
+                        continue_flag &= ~isempty(xsum)
+                        if continue_flag
+                            @inbounds setstorage[ix2] = xsum
                         end
+                    elseif (~chdset1 && chdset2)
+                        pnew, xhold, xsum = plus_rev(parent_value, ssto1, nsto2)
+                        continue_flag &= ~isempty(xhold)
+                        if continue_flag
+                            @inbounds setstorage[ix1] = xhold
+                        end
+                    elseif (~chdset1 && ~chdset2)
+                        pnew, xhold, xsum = plus_rev(parent_value, ssto1, ssto2)
+                        continue_flag &= ~isempty(xhold)
+                        continue_flag &= ~isempty(xsum)
+                        if continue_flag
+                            @inbounds setstorage[ix1] = xhold
+                            @inbounds setstorage[ix2] = xsum
+                        end
+                    end
+                    continue_flag &= ~isempty(pnew)
+                    if continue_flag
+                        @inbounds setstorage[k] = pnew
                     else
                         break
                     end
+                else
+                    count = 0
+                    child_arr_indx = children_arr[children_idx]
+                    for c_idx in child_arr_indx
+                        tmp_sum = 0.0
+                        @inbounds inner_chdset = numvalued[c_idx]
+                        if ~inner_chdset
+                            if (count < MAX_ASSOCIATIVE_REVERSE)
+                                for cin_idx in child_arr_indx
+                                    if (cin_idx != c_idx)
+                                        @inbounds nix = children_arr[cin_idx]
+                                        @inbounds nchdset = numvalued[cin_idx]
+                                        if (nchdset)
+                                            @inbounds tmp_sum += numberstorage[nix]
+                                        else
+                                            @inbounds tmp_sum += setstorage[nix]
+                                        end
+                                    end
+                                end
+                                @inbounds tmp_hold = setstorage[c_idx]
+                                pnew, xhold, xsum = plus_rev(parent_value, tmp_hold, tmp_sum)
+                                if (isempty(pnew) || isempty(xhold) || isempty(xsum))
+                                    continue_flag = false
+                                    break
+                                end
+                                setstorage[k] = set_value_post(x_values, pnew, current_node, subgrad_tighten)
+                                setstorage[c_idx] = set_value_post(x_values, xhold, current_node, subgrad_tighten)
+                            else
+                                break
+                            end
+                        end
+                        count += 1
+                    end
+                    if ~continue_flag
+                        break
+                    end
                 end
-                PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 2) # :-
+                println("op is -")
                 PRINT_EVAL && print_call!(:minus_rev, k, children_idx)
                 child1 = first(children_idx)
+                child2 = last(children_idx)
                 @assert n_children == 2
                 @inbounds ix1 = children_arr[child1]
-                @inbounds ix2 = children_arr[child1+1]
+                @inbounds ix2 = children_arr[child2]
                 @inbounds chdset1 = numvalued[ix1]
                 @inbounds chdset2 = numvalued[ix2]
-                if chdset1
+                if chdset1 && ~chdset2
                     pnew, xnew, ynew = minus_rev(parent_value, numberstorage[ix1], setstorage[ix2])
-                elseif chdset2
+                elseif ~chdset1 && chdset2
                     pnew, xnew, ynew = minus_rev(parent_value, setstorage[ix1], numberstorage[ix2])
-                else
+                elseif chdset1 && chdset2
                     pnew, xnew, ynew = minus_rev(parent_value, setstorage[ix1], setstorage[ix2])
                 end
-                setstorage[parent_index] = pnew
-                if ~chdset1
-                    setstorage[ix1] = xnew
+                if ~(~chdset1 && ~chdset2)
+                    flagp = isempty(pnew)
+                    flagx = isempty(xnew)
+                    flagy = isempty(ynew)
+                    if (flagp || flagx || flagy)
+                        continue_flag = false
+                        break
+                    end
+                    setstorage[k] = pnew
+                    if ~chdset1
+                        setstorage[ix1] = set_value_post(x_values, xnew, current_node, subgrad_tighten)
+                    end
+                    if  ~chdset2
+                        setstorage[ix2] = set_value_post(x_values, ynew, current_node, subgrad_tighten)
+                    end
+                    PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
                 end
-                if ~chdset2
-                    setstorage[ix2] = ynew
-                end
-                PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 3) # :*
+                println("op is *")
                 PRINT_EVAL && print_call!(:mul_rev, k, children_idx)
                 tmp_sum = 1.0
-                tmp_hold = 1.0
                 chdset = true
                 count = 0
-                for c_idx in children_idx
+                child_arr_indx = children_arr[children_idx]
+                for c_idx in child_arr_indx
                     if (count < MAX_ASSOCIATIVE_REVERSE)
                         if ~numvalued[c_idx]
-                            tmp_sum = 1.0; tmp_hold = 1.0
-                            for cin_idx in children_idx
+                            tmp_sum = 1.0
+                            for cin_idx in child_arr_indx
                                 if (cin_idx != c_idx)
-                                    @inbounds ix = children_arr[cin_idx]
                                     @inbounds chdset = numvalued[cin_idx]
                                     if (chdset)
-                                        @inbounds tmp_sum *= numberstorage[ix]
+                                        @inbounds tmp_sum *= numberstorage[cin_idx]
                                     else
-                                        @inbounds tmp_sum *= setstorage[ix]
+                                        @inbounds tmp_sum *= setstorage[cin_idx]
                                     end
                                 end
                             end
-                            @inbounds ix = children_arr[c_idx]
+                            println("c_idx: $c_idx")
+                            println("tmp_sum: $tmp_sum")
                             @inbounds chdset = numvalued[c_idx]
                             if (chdset)
-                                @inbounds tmp_hold *= numberstorage[ix]
+                                @inbounds pnew, xhold, xsum = mul_rev(parent_value, numberstorage[c_idx], tmp_sum)
                             else
-                                @inbounds tmp_hold *= setstorage[ix]
+                                @inbounds pnew, xhold, xsum = mul_rev(parent_value, setstorage[c_idx], tmp_sum)
                             end
-                            pnew, xhold, xsum = mul_rev(parent_value, tmp_hold, tmp_sum)
-                            setstorage[parent_index] = pnew
-                            setstorage[ix] = xhold
+                            if (isempty(pnew) || isempty(xhold) || isempty(xsum))
+                                continue_flag = false
+                                break
+                            end
+                            setstorage[k] = set_value_post(x_values,  pnew, current_node, subgrad_tighten)
+                            setstorage[c_idx] = set_value_post(x_values, xhold, current_node, subgrad_tighten)
                             count += 1
+                            PRINT_EVAL && println("setstorage[parent_index] = $(setstorage[parent_index]), setstorage[ix] = $(setstorage[c_idx])")
                         end
                     else
                         break
                     end
                 end
-                PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 4) # :^
+                println("op is ^")
                 PRINT_EVAL && print_call!(:pow_rev, k, children_idx)
                 child1 = first(children_idx)
+                child2 = last(children_idx)
                 @assert n_children == 2
                 @inbounds ix1 = children_arr[child1]
-                @inbounds ix2 = children_arr[child1+1]
+                @inbounds ix2 = children_arr[child2]
                 @inbounds chdset1 = numvalued[ix1]
                 @inbounds chdset2 = numvalued[ix2]
                 if chdset1
@@ -623,20 +706,26 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
                 else
                     pnew, xnew, ynew = pow_rev(parent_value, setstorage[ix1], setstorage[ix2])
                 end
-                setstorage[parent_index] = pnew
+                if (isempty(pnew) || isempty(xnew) || isempty(ynew))
+                    continue_flag = false
+                    break
+                end
+                setstorage[k] = pnew
                 if ~chdset1
-                    setstorage[ix1] = xnew
+                    setstorage[ix1] = set_value_post(x_values, xnew, current_node, subgrad_tighten)
                 end
                 if ~chdset2
-                    setstorage[ix2] = ynew
+                    setstorage[ix2] = set_value_post(x_values, ynew, current_node, subgrad_tighten)
                 end
-                PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
+                (PRINT_EVAL && (~chdset1 || ~chdset1)) && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 5) # :/
+                println("op is /")
                 PRINT_EVAL && print_call!(:div_rev, k, children_idx)
                 child1 = first(children_idx)
+                child2 = last(children_idx)
                 @assert n_children == 2
                 @inbounds ix1 = children_arr[child1]
-                @inbounds ix2 = children_arr[child1+1]
+                @inbounds ix2 = children_arr[child2]
                 @inbounds chdset1 = numvalued[ix1]
                 @inbounds chdset2 = numvalued[ix2]
                 if chdset1
@@ -646,12 +735,16 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
                 else
                     pnew, xnew, ynew = div_rev(parent_value, setstorage[ix1], setstorage[ix2])
                 end
+                if (isempty(pnew) || isempty(xnew) || isempty(ynew))
+                    continue_flag = false
+                    break
+                end
                 setstorage[parent_index] = pnew
                 if ~chdset1
-                    setstorage[chdset1] = xnew
+                    setstorage[ix1] = set_value_post(x_values, xnew, current_node, subgrad_tighten)
                 end
                 if ~chdset2
-                    setstorage[chdset2] = ynew
+                    setstorage[ix2] = set_value_post(x_values, ynew, current_node, subgrad_tighten)
                 end
                 PRINT_EVAL && println("pnew: $pnew, xnew: $xnew, ynew: $ynew")
             elseif (op == 6) # ifelse
@@ -662,9 +755,12 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
             @inbounds child_value = setstorage[k]
             @inbounds parent_value = setstorage[nod.parent]
             pnew, cnew = eval_univariate_set_reverse(op, parent_value, child_value)
-            isempty(cnew) && (continue_flag = false)
-            @inbounds setstorage[k] = cnew
-            @inbounds setstorage[nod.parent] = pnew
+            if (isempty(pnew) || isempty(cnew))
+                continue_flag = false
+                break
+            end
+            @inbounds setstorage[k] = set_value_post(x_values, cnew, current_node, subgrad_tighten)
+            @inbounds setstorage[nod.parent] = set_value_post(x_values, pnew, current_node, subgrad_tighten)
             PRINT_EVAL && print_call!(univariate_operators_rev[op], k, children_idx)
         end
         ~continue_flag && break
@@ -677,26 +773,47 @@ function reverse_eval_all(d::Evaluator,x)
     subexpr_values_set = d.subexpression_values_set
     subexpr_isnum = d.subexpression_isnum
     feas = true
+    subgrad_tighten = d.subgrad_tighten
 
     if d.has_nlobj
         # Cut Objective at upper bound
+        #println("  ")
+        #println("  ")
+        #println(" REVERSE OBJECTIVE ")
         ex = d.objective
-        ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(-Inf,d.objective_ubd)
+        ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(-Inf, d.objective_ubd)
         feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
-                              subexpr_values_set, ex.nd, ex.adj, x)
+                              subexpr_values_set, ex.nd, ex.adj, x, d.current_node, subgrad_tighten)
+        ~feas && println("objective in [$(-Inf), $(d.objective_ubd)], feasibility is $feas")
     end
     for i in 1:length(d.constraints)
         # Cut constraints on constraint bounds & reverse
-        ex = d.constraints[i]
-        ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(d.constraints_lbd[i], d.constraints_ubd[i])
-        feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
-                              subexpr_values_set, ex.nd, ex.adj, x)
+        if feas
+            #println("  ")
+            #println("  ")
+            println(" REVERSE CONSTRAINTS[$i] ")
+            ex = d.constraints[i]
+            ex.setstorage[1] = ex.setstorage[1] ∩ IntervalType(d.constraints_lbd[i], d.constraints_ubd[i])
+            feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
+                                  subexpr_values_set, ex.nd, ex.adj, x, d.current_node, subgrad_tighten)
+            ~feas && println("constraint #$i in [$(d.constraints_lbd[i]), $(d.constraints_ubd[i])], feasibility is $feas")
+        else
+            break
+        end
     end
     for k in 1:length(d.subexpression_order)
-        ex = d.subexpressions[d.subexpression_order[k]]
-        ex.setstorage[1] = subexpression_values_set[d.subexpression_order[k]] # TODO MAKE SURE INDEX ON SUBEXPRESSION_VALUES_SET CORRECT
-        feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
-                              subexpr_values_set, ex.nd, ex.adj, x)
+        if feas
+            #println("  ")
+            #println("  ")
+            #println(" subexpressions[$i] ")
+            ex = d.subexpressions[d.subexpression_order[k]]
+            ex.setstorage[1] = subexpression_values_set[d.subexpression_order[k]] # TODO MAKE SURE INDEX ON SUBEXPRESSION_VALUES_SET CORRECT
+            feas &= reverse_eval(ex.setstorage, ex.numberstorage, ex.numvalued, subexpr_isnum,
+                                  subexpr_values_set, ex.nd, ex.adj, x, d.current_node, subgrad_tighten)
+             ~feas && println("subexpression #$k, feasibility is $feas")
+        else
+            break
+        end
     end
     copyto!(d.last_x,x)
 
@@ -713,10 +830,11 @@ by more that `d.fw_atol` at each iteration.
 function forward_reverse_pass(d::Evaluator,x)
     flag = true
     #if ~same_box(d.current_node, d.last_node, 0.0)
-#        d.last_node = d.current_node
+    #   d.last_node = d.current_node
         if (d.last_x != x)
             if d.has_reverse
-                for i in d.cp_reptitions
+                for i in 1:d.cp_reptitions
+                    d.first_eval_flag = (i == 1)
                     if flag
                         forward_eval_all(d,x)
                         flag = reverse_eval_all(d,x)
@@ -725,9 +843,10 @@ function forward_reverse_pass(d::Evaluator,x)
                     end
                 end
             else
+                d.first_eval_flag = true
                 forward_eval_all(d,x)
             end
         end
-#    end
+     #end
      return flag
 end

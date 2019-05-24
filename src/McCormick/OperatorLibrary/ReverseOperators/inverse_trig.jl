@@ -3,10 +3,12 @@
 
 Reverse McCormick operator for `asin`.
 """
-function asin_rev(y::Interval, x::Interval)  # y = asin(x)
-    h = lo(half_pi)
+function asin_rev(y::MC, x::MC)  # y = asin(x)
+    h = lo(half_pi(Float64))
     y = y ∩ IntervalType(-h, h)
-    x = sin(y)
+    if ~isempty(y)
+        x = sin(y)
+    end
     y,x
 end
 
@@ -16,9 +18,11 @@ end
 Reverse McCormick operator for `acos`.
 """
 function acos_rev(y::MC, x::MC)
-        y = y ∩ IntervalType(0.0,hi(two_pi))
+    y = y ∩ IntervalType(0.0, hi(half_pi(Float64)))
+    if ~isempty(y)
         x = x ∩ cos(y)
-        y,x
+    end
+    y,x
 end
 
 """
@@ -27,7 +31,9 @@ end
 Reverse McCormick operator for `atan`.
 """
 function atan_rev(y::MC, x::MC)
-        y = y ∩ IntervalType(-lo(half_pi),hi(half_pi))
+    y = y ∩ IntervalType(-lo(half_pi(Float64)), hi(half_pi(Float64)))
+    if ~isempty(y)
         x = x ∩ tan(y)
-        y,x
+    end
+    y,x
 end

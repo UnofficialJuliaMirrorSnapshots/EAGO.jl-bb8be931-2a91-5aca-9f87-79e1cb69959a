@@ -3,7 +3,7 @@
 
 Reverse McCormick operator for `sinh`.
 """
-function sinh_rev!(y::MC, x::MC)
+function sinh_rev(y::MC, x::MC)
     x = x ∩ asinh(y)
     y,x
 end
@@ -13,9 +13,11 @@ end
 
 Reverse McCormick operator for `cosh`.
 """
-function cosh_rev!(y::MC,x::MC)
-    y = y ∩ IntervalType(1.0,∞)
-    x = x ∩ acosh(y)
+function cosh_rev(y::MC, x::MC)
+    y = y ∩ IntervalType(1.0, Inf)
+    if ~isempty(y)
+        x = x ∩ acosh(y)
+    end
     y,x
 end
 
@@ -24,8 +26,10 @@ end
 
 Reverse McCormick operator for `tanh`.
 """
-function tanh_rev!(y::MC,x::MC)
-    y = y ∩ IntervalType(-1.0,1.0)
-    x = x ∩ atanh(y)
+function tanh_rev(y::MC, x::MC)
+    y = y ∩ IntervalType(-1.0, 1.0)
+    if ~isempty(y)
+        x = x ∩ atanh(y)
+    end
     y,x
 end

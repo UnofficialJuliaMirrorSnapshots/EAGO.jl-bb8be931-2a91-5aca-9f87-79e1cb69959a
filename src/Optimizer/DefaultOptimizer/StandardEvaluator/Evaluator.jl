@@ -57,6 +57,8 @@ mutable struct Evaluator{T<:Real} <: MOI.AbstractNLPEvaluator
     subexpression_number::Int
     has_nlobj::Bool
     has_reverse::Bool
+    subgrad_tighten::Bool
+    first_eval_flag::Bool
     cp_reptitions::Int
     cp_tolerance::Float64
     objective::FunctionSetStorage
@@ -84,6 +86,7 @@ mutable struct Evaluator{T<:Real} <: MOI.AbstractNLPEvaluator
     function Evaluator{T}(m) where T<:Real
         d = new()
         d.m = m
+        d.first_eval_flag = false
         d.objective_ubd = Inf
         d.constraints = FunctionSetStorage[]
         d.constraints_lbd = Float64[]

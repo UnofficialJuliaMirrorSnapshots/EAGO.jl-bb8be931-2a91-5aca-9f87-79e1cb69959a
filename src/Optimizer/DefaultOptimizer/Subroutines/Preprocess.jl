@@ -6,44 +6,41 @@ specified in `EAGO.Optimizer` object.
 """
 function default_preprocess!(x::Optimizer,y::NodeBB)
 
-    #println("start preprocess")
     # Sets initial feasibility
     feas = true; rept = 0
 
     # runs poor man's LP contractor
-    if (x.poor_man_lp_depth > x.current_iteration_count)
+    if (x.poor_man_lp_depth >= x.current_iteration_count)
         for i in 1:x.poor_man_lp_reptitions
             feas = poor_man_lp(x,y)
             (~feas) && (break)
         end
     end
-    #println("finished poor man lp")
 
     # runs univariate quadratic contractor
-    if ((x.univariate_quadratic_depth > x.current_iteration_count) && feas)
+    if ((x.univariate_quadratic_depth >= x.current_iteration_count) && feas)
         for i in 1:x.univariate_quadratic_reptitions
             feas = univariate_quadratic(x,y)
             (~feas) && (break)
         end
     end
-    #println("finished quadratic univ")
+    #println("pre-obbt: $feas")
 
-    if ((x.obbt_depth > x.current_iteration_count) && feas)
+    x.obbt_performed_flag = false
+    if ((x.obbt_depth >= x.current_iteration_count) && feas)
+        x.obbt_performed_flag = true
         for i in 1:x.obbt_reptitions
             feas = obbt(x,y)
             (~feas) && (break)
         end
     end
-    #println("obbt")
+    #println("obbt: $feas")
 
-    if ((x.cp_depth > x.current_iteration_count) && feas)
-        for i in 1:x.cp_reptitions
-            feas = cpwalk(x,y)
-            (~feas) && (break)
-        end
+    if ((x.cp_depth >= x.current_iteration_count) && feas)
+        #println("ran cp walk")
+        feas = cpwalk(x,y)
     end
 
-    println("obbt feas results: $feas at iteration $(x.current_iteration_count)")
     x.current_preprocess_info.feasibility = feas
-    #println("end preprocess")
+    #println("end preprocess: $feas")
 end

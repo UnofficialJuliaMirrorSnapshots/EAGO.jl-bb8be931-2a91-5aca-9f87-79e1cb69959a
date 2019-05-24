@@ -89,11 +89,11 @@ function solve_nlp!(x::Optimizer)
       print_results!(x,true)
 
       while x.cut_condition(x)
-        x.add_cut!(x); x.cut_iterations += 1
-        LowerProblemTime += @elapsed x.lower_problem!(x,CurrentNode)
+        LowerProblemTime += @elapsed x.add_cut!(x, CurrentNode)
+        x.cut_iterations += 1
         x.history.lower_bound[x.current_iteration_count] = x.global_lower_bound
-        print_results!(x,true)
       end
+      print_results_post_cut!(x)
       x.history.cut_count[x.current_iteration_count] = x.cut_iterations
 
       # checks for infeasibility stores solution

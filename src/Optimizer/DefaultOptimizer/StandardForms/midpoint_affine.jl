@@ -6,28 +6,27 @@ of the objective and subgradients and their respective (sub)gradients at the
 midpoint of the domain of `n`. The resulting affine objective and constraints
 are added to the `trg` optimizer.
 """
-function midpoint_affine!(src::Optimizer,trg,n::NodeBB,r)
+function midpoint_affine!(src::Optimizer, trg, n::NodeBB, r, xpnt::Vector{Float64})
     ngrad = src.variable_number
     nx =  src.state_variables
     np = ngrad - nx
     var = src.upper_variables
 
     src.working_evaluator_block.evaluator.current_node = n
-    midx = (n.upper_variable_bounds + n.lower_variable_bounds)/2.0
 
     # Add objective
     if src.working_evaluator_block.has_objective
         # Calculates relaxation and subgradient
         df = zeros(Float64, np)
-        f = MOI.eval_objective(src.working_evaluator_block.evaluator, midx)
-        MOI.eval_objective_gradient(src.working_evaluator_block.evaluator, df, midx)
+        f = MOI.eval_objective(src.working_evaluator_block.evaluator, xpnt)
+        MOI.eval_objective_gradient(src.working_evaluator_block.evaluator, df, xpnt)
 
         # Add objective relaxation to model
         saf_const = f
         for i in (1+nx):ngrad
             grad_c = df[i-nx]
-            midx_c = midx[i]
-            saf_const -= midx_c*grad_c
+            xpnt_c = xpnt[i]
+            saf_const -= xpnt_c*grad_c
         end
         saf = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(df, var[(1+nx):ngrad]), saf_const)
         #println("objective cut: saf $saf")
@@ -49,17 +48,17 @@ function midpoint_affine!(src::Optimizer,trg,n::NodeBB,r)
         g_cc = zeros(Float64,leng)
         dg_cc = zeros(Float64,leng,np)
 
-        MOI.eval_constraint(src.working_evaluator_block.evaluator, g, midx)
-        MOI.eval_constraint_jacobian(src.working_evaluator_block.evaluator, dg, midx)
+        MOI.eval_constraint(src.working_evaluator_block.evaluator, g, xpnt)
+        MOI.eval_constraint_jacobian(src.working_evaluator_block.evaluator, dg, xpnt)
 
-        eval_constraint_cc(src.working_evaluator_block.evaluator, g_cc, midx)
-        eval_constraint_cc_grad(src.working_evaluator_block.evaluator, dg_cc, midx)
+        eval_constraint_cc(src.working_evaluator_block.evaluator, g_cc, xpnt)
+        eval_constraint_cc_grad(src.working_evaluator_block.evaluator, dg_cc, xpnt)
 
         for (j,bns) in enumerate(src.working_evaluator_block.constraint_bounds)
             if bns.upper != Inf
                 constant = g[j]
                 for i in 1:np
-                    constant -= midx[i+nx]*dg[j,i]
+                    constant -= xpnt[i+nx]*dg[j,i]
                 end
                 saf = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(dg[j,:], var[(1+nx):ngrad]), 0.0)
                 set = MOI.LessThan(bns.upper-constant)
@@ -68,7 +67,7 @@ function midpoint_affine!(src::Optimizer,trg,n::NodeBB,r)
             if bns.lower > -Inf
                 constant = g_cc[j]
                 for i in 1:np
-                    constant -= midx[i+nx]*dg_cc[j,i]
+                    constant -= xpnt[i+nx]*dg_cc[j,i]
                 end
                 saf = MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(-dg_cc[j,:], var[(1+nx):ngrad]), 0.0)
                 set = MOI.LessThan(constant)

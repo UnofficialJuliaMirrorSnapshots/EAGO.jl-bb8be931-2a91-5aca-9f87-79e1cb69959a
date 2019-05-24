@@ -77,11 +77,12 @@ end
 
 Updates bounds on optimizer `z` by adding new box valued constraints.
 """
-function update_upper_variable_bounds!(m::Optimizer,y::NodeBB,z::T) where {T<:MOI.AbstractOptimizer}
+function update_upper_variable_bounds!(m::Optimizer, y::NodeBB, z::T) where {T<:MOI.AbstractOptimizer}
     # Updates variables bounds
+    midxi = 0.0
     typevar = m.upper_variables
-    println("m.variable_info: $(m.variable_info)")
     for (i,var) in enumerate(m.variable_info)
+        var_ind = typevar[i]
         var_xi = MOI.SingleVariable(typevar[i])
         if var.is_integer
         else
@@ -97,6 +98,8 @@ function update_upper_variable_bounds!(m::Optimizer,y::NodeBB,z::T) where {T<:MO
             elseif var.has_upper_bound
                 MOI.add_constraint(z, var_xi, MOI.LessThan(y.upper_variable_bounds[i]))
             end
+            midxi = (y.upper_variable_bounds[i]+y.lower_variable_bounds[i])/2.0
+            MOI.set(z, MOI.VariablePrimalStart(), var_ind, midxi)
         end
         #push!(m.VariableIndexUpp,VarTupleUpp)
     end
