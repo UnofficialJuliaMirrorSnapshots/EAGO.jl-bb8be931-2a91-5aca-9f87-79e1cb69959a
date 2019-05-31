@@ -14,7 +14,7 @@ function initialize_evaluators!(m::Optimizer, flag::Bool)
     init_feat = [:Grad, :ExprGraph]
     #has_hessian && push!(init_feat, :Hess)
     num_nlp_constraints > 0 && push!(init_feat, :Jac)
-    m.debug1 = evaluator.m.nlp_data
+    m.ext = evaluator.m.nlp_data
     #nldata = evaluator.m.nlp_data
     #nlobj = evaluator.m.nlp_data.nlobj
     #println("nldata: $nldata")

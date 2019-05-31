@@ -1,3 +1,29 @@
+
+function interval_lower_bound!(x::Optimizer, y::NodeBB, flag::Bool)
+
+    feas = true
+
+    d = x.working_evaluator_block.evaluator
+    objective_lo = get_node_lower(d.objective, 1)
+    constraints_intv_lo = get_node_lower.(d.constraints, 1)
+    constraints_intv_hi = get_node_upper.(d.constraints, 1)
+    constraints_bnd_lo = d.constraints_lbd
+    constrains_bnd_hi = d.constraints_ubd
+
+    for i in 1:d.constraint_number
+        if (constraints_bnd_lo[i] > constraints_intv_hi[i]) ||
+           (constrains_bnd_hi[i] < constraints_intv_lo[i])
+            feas = false
+            break
+        end
+    end
+
+    x.current_lower_info.feasibility = feas
+    flag && (objective_lo = max(x.current_lower_info.value, objective_lo))
+    x.current_lower_info.value = feas ? objective_lo : -Inf
+
+end
+
 """
     default_lower_bounding!
 
@@ -31,14 +57,16 @@ function default_lower_bounding!(x::Optimizer, y::NodeBB)
     result_status_code = MOI.get(x.working_relaxed_optimizer, MOI.PrimalStatus())
     valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
     solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
+    #println("initial solution: $solution")
 
     if valid_flag
         if feasible_flag
             x.current_lower_info.feasibility = true
             x.current_lower_info.value = MOI.get(x.working_relaxed_optimizer, MOI.ObjectiveValue())
+            #interval_lower_bound!(x, y, false)
             vprimal_solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
             x.current_lower_info.solution[1:end] = vprimal_solution
-            x.cut_add_flag = true
+            x.cut_add_flag = x.current_lower_info.feasibility
             set_dual!(x)
         else
             x.cut_add_flag = false
@@ -46,9 +74,13 @@ function default_lower_bounding!(x::Optimizer, y::NodeBB)
             x.current_lower_info.value = -Inf
         end
     else
+        interval_lower_bound!(x, y, true)
+        x.cut_add_flag = false
+        #=
         error("Lower problem returned a TerminationStatus = $(termination_status) and
                ResultStatusCode = $(result_status_code). This pair of codes does not
                definitively prove the subproblem to be globally optimal or infeasible.
                The subproblem must be solved to global optimality.")
+        =#
     end
 end

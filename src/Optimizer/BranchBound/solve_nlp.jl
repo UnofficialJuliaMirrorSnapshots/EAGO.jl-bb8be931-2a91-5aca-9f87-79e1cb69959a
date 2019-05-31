@@ -51,7 +51,6 @@ function solve_nlp!(x::Optimizer)
     x.current_preprocess_info.feasibility = true
     x.current_postprocess_info.feasibility = true
 
-    #=
     if (x.current_iteration_count == 1)
       OldLowerInfo = deepcopy(x.current_lower_info)
       OldUpperInfo = deepcopy(x.current_upper_info)
@@ -74,7 +73,7 @@ function solve_nlp!(x::Optimizer)
     end
     x.current_preprocess_info.feasibility = true
     x.current_postprocess_info.feasibility = true
-    =#
+
 
     # Performs prepocessing and times
     PreprocessTime = @elapsed x.preprocess!(x,CurrentNode)
@@ -125,11 +124,13 @@ function solve_nlp!(x::Optimizer)
 
           # Checks to see if the node
           if (x.current_postprocess_info.feasibility)
-            if x.repeat_check(x,CurrentNode)
-              single_storage!(x,CurrentNode)
+            if x.repeat_check(x, CurrentNode)
+              single_storage!(x, CurrentNode)
+              x.node_repetitions += 1
             else
               Y1,Y2 = x.bisection_function(x,CurrentNode)
               x.node_storage!(x,Y1,Y2)
+              x.node_repetitions = 1
             end
           end
         end

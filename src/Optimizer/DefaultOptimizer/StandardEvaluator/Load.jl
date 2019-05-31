@@ -103,10 +103,11 @@ function build_nlp_evaluator(S::R, src::T, x::Optimizer, bool_flag::Bool) where 
         end
 
         # USER OUTPUT BUFFERS??????
-        d.cp_tolerance = x.cp_tolerance
-        d.cp_reptitions = x.cp_reptitions
+        d.cp_tolerance = x.cp_interval_tolerance
+        d.cp_reptitions = x.cp_interval_reptitions
         d.has_reverse = x.evaluation_reverse
         d.subgrad_tighten = x.subgrad_tighten
+        d.subgrad_tighten_reverse = x.subgrad_tighten_reverse
         d.jac_storage = Array{Float64}(undef,max(num_variables_, d.m.nlp_data.largest_user_input_dimension)) # DO I NEED THIS
 
         d.constraint_number = length(d.constraints)

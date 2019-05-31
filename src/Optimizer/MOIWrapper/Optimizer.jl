@@ -174,8 +174,11 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     # Feasibility-Based Bound Tightening Options
     cp_depth::Int
-    cp_reptitions::Int
-    cp_tolerance::Float64
+    cp_improvement::Float64
+    cp_interval_reptitions::Int
+    cp_interval_tolerance::Float64
+    cp_mccormick_reptitions::Int
+    cp_mccormick_tolerance::Float64
     evaluation_reverse::Bool
 
     # Rounding mode (interval arithmetic options)
@@ -186,6 +189,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
     # Subgradient Tightening Flag
     subgrad_tighten::Bool
+    subgrad_tighten_reverse::Bool
 
     # Options for Poor Man's LP
     poor_man_lp_depth::Int
@@ -198,7 +202,10 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     bivariate_quadratic_reptitions::Int
 
     # Options for Repetition (If DBBT Performed Well)
+    node_repetitions::Int
     maximum_repetitions::Int
+    initial_volume::Float64
+    final_volume::Float64
     repetition_volume_tolerance::Float64
 
     # Upper bounding nodes skipped
@@ -223,8 +230,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     reform_flatten_flag::Bool
 
     # Debug
-    debug1::Any
-    debug2::Any
+    ext
 
     function Optimizer(;options...)
 
@@ -276,18 +282,21 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
         # Feasibility-Based Bound Tightening Options
         default_opt_dict[:cp_depth] = 0
-        default_opt_dict[:cp_reptitions] = 10
-        default_opt_dict[:cp_tolerance] = 0.99
+        default_opt_dict[:cp_interval_reptitions] = 0
+        default_opt_dict[:cp_interval_tolerance] = 0.99
+        default_opt_dict[:cp_mccormick_reptitions] = 0
+        default_opt_dict[:cp_mccormick_tolerance] = 0.99
         default_opt_dict[:evaluation_reverse] = false
 
         # Cutting Options
-        default_opt_dict[:cut_max_iterations] = 10
+        default_opt_dict[:cut_max_iterations] = 0
 
         # Interval options
         default_opt_dict[:rounding_mode] = :accurate
 
         # Subgradient tightening options
         default_opt_dict[:subgrad_tighten] = true
+        default_opt_dict[:subgrad_tighten_reverse] = false
 
         # Feasibility-Based Bound Tightening for Quadratics
         default_opt_dict[:univariate_quadratic_depth] = 0
@@ -296,8 +305,8 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         default_opt_dict[:bivariate_quadratic_reptitions] = 2
 
         # Options for Repetition (If DBBT Performed Well)
-        default_opt_dict[:maximum_repetitions] = 1
-        default_opt_dict[:repetition_volume_tolerance] = 0.0
+        default_opt_dict[:maximum_repetitions] = 4
+        default_opt_dict[:repetition_volume_tolerance] = 0.9
 
         # Poor Man's Options
         default_opt_dict[:poor_man_lp_depth] = 0
@@ -366,8 +375,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
 
         m.objective_value = -Inf
 
-        m.debug1 = []
-        m.debug2 = []
+        m.ext = []
         #m.input_model = 0
         m.integer_variables = Int[]
         m.variable_info = VariableInfo[]
@@ -439,6 +447,10 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
         m.current_iteration_count = 0
         m.current_node_count = 0
         m.maximum_node_id = 0
+
+        m.node_repetitions = 0
+        m.initial_volume = 0.0
+        m.final_volume = 0.0
 
         # Output for Solution Storage
         m.solution_value = -Inf

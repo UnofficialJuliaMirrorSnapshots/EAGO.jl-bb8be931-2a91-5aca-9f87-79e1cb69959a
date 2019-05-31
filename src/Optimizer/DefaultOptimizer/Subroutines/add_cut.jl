@@ -3,7 +3,7 @@
 
 Branch-and-cut feature currently under development. Currently, returns false.
 """
-default_cut_condition(x::Optimizer) = x.cut_add_flag
+default_cut_condition(x::Optimizer) = x.cut_add_flag && (x.cut_iterations < x.cut_max_iterations)
 
 #=
 function check_cut_tolerance(x::Optimizer, solution::Vector{Float64})
@@ -29,17 +29,17 @@ function default_add_cut!(x::Optimizer, y::NodeBB)
     termination_status = MOI.get(x.working_relaxed_optimizer, MOI.TerminationStatus())
     result_status_code = MOI.get(x.working_relaxed_optimizer, MOI.PrimalStatus())
     valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
-    last_solution = x.current_lower_info.solution[1:end]
-
-    println("last_solution: $last_solution")
-
+    last_obj = x.current_lower_info.value
+    #println("cut solution: $last_obj")
     if valid_flag
         if feasible_flag
             x.current_lower_info.feasibility = true
-            x.current_lower_info.value = MOI.get(x.working_relaxed_optimizer, MOI.ObjectiveValue())
+            objval = MOI.get(x.working_relaxed_optimizer, MOI.ObjectiveValue())
+            x.current_lower_info.value = objval
+            #interval_lower_bound!(x, y, false)
             vprimal_solution = MOI.get(x.working_relaxed_optimizer, MOI.VariablePrimal(), x.lower_variables)
-            solutions_distinct = ~(last_solution == vprimal_solution)
-            x.cut_add_flag = (x.cut_iterations < x.cut_max_iterations) && solutions_distinct
+            solutions_distinct = ~isapprox(last_obj, objval, atol = x.absolute_tolerance/2.0)
+            x.cut_add_flag = solutions_distinct
             x.current_lower_info.solution[1:end] = vprimal_solution
             set_dual!(x)
         else
@@ -48,10 +48,7 @@ function default_add_cut!(x::Optimizer, y::NodeBB)
             x.current_lower_info.value = -Inf
         end
     else
-        error("Lower problem returned a TerminationStatus = $(termination_status) and
-               ResultStatusCode = $(result_status_code). This pair of codes does not
-               definitively prove the subproblem to be globally optimal or infeasible.
-               The subproblem must be solved to global optimality.")
+        x.cut_add_flag = false
     end
 
 end

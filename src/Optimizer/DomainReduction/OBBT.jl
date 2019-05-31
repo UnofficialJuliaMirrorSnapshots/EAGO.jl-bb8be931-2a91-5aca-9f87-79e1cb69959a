@@ -139,6 +139,7 @@ function calculate_initial_relaxation!(x::Optimizer, y::NodeBB)
     end
 
     # relax functions
+    xpnt = 0.5*(lower_variable_bounds(y) + upper_variable_bounds(y))
     update_lower_variable_bounds1!(x, y, x.working_relaxed_optimizer)
     x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, xpnt, load = true)
     x.relax_function!(x, x.working_relaxed_optimizer, y, x.relaxation, xpnt, load = false)

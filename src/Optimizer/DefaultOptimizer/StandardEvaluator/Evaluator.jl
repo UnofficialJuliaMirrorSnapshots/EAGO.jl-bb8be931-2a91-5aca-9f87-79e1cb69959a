@@ -58,6 +58,7 @@ mutable struct Evaluator{T<:Real} <: MOI.AbstractNLPEvaluator
     has_nlobj::Bool
     has_reverse::Bool
     subgrad_tighten::Bool
+    subgrad_tighten_reverse::Bool
     first_eval_flag::Bool
     cp_reptitions::Int
     cp_tolerance::Float64

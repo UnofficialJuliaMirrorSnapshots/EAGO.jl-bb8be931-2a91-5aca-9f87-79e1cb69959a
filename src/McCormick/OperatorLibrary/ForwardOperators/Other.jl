@@ -173,9 +173,9 @@ function intersect(x::MC{N}, y::IntervalType) where N
     		min_MC = y - max(y - x, 0.0)   # used for concave
     		return MC{N}(max_MC.cv, min_MC.cc, intersect(Intv(x),y), max_MC.cv_grad, min_MC.cc_grad, (x.cnst && y.cnst))
   	else
-    	println("ran intersect 1")
-			println("x: $x")
-			println("y: $y")
+    	#println("ran intersect 1")
+		#	println("x: $x")
+		#	println("y: $y")
     	# Convex terms
     	if (x.cv >= lo(y))
       	cv = x.cv
@@ -202,7 +202,7 @@ function intersect(x::MC{N}, y::IntervalType) where N
 		  		cv_grad = zero(x.cc_grad)
 	  		end
     	end
-		println("ran intersect 1: $(MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst)))")
+		#println("ran intersect 1: $(MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst)))")
     return MC{N}(cv, cc, intersect(Intv(x),y), cv_grad, cc_grad, (x.cnst && y.cnst))
   end
 end

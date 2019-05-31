@@ -9,6 +9,8 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
     # Sets initial feasibility
     feas = true; rept = 0
 
+    x.initial_volume = prod(upper_variable_bounds(y) - lower_variable_bounds(y))
+
     # runs poor man's LP contractor
     if (x.poor_man_lp_depth >= x.current_iteration_count)
         for i in 1:x.poor_man_lp_reptitions
@@ -37,10 +39,11 @@ function default_preprocess!(x::Optimizer,y::NodeBB)
     #println("obbt: $feas")
 
     if ((x.cp_depth >= x.current_iteration_count) && feas)
-        #println("ran cp walk")
         feas = cpwalk(x,y)
     end
+    #println("cp walk: $feas")
+
+    x.final_volume = prod(upper_variable_bounds(y) - lower_variable_bounds(y))
 
     x.current_preprocess_info.feasibility = feas
-    #println("end preprocess: $feas")
 end
