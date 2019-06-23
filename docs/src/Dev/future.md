@@ -1,7 +1,7 @@
 # Future Work
 
 ## Current Activity:
-* Upgrade to JuMP 0.19 on release and fix CI testing.
+* Update CI testing.
 * Specialized algorithms for relaxing ODE constrained problems and solving
 global and robust optimization problems.
 * Development of dedicated linear algebra libraries for McCormick operators.

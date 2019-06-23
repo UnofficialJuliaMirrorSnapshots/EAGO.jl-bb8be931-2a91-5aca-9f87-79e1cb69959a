@@ -2,11 +2,11 @@
 
 ### Solver Parameters
 
-Parameter considerations for explicit optimization:
+EAGO defaults to using reasonable estimates of performant solver parameters. Parameter considerations for explicit optimization:
 - **Validation**: The validated interval arithmetic option comes with a
                   significant performance decrease but can be useful for some
                   problems.
-- **OBBT**: Recommend selecting an arbitrary high depth for range reduction for constrained problems.
+- **OBBT**: Selecting an arbitrary high depth for range reduction for constrained problems may significantly improve performance on some problems and dramatically reduce solution times of others.
 - **DBBT**: Recommend selecting an arbitrary high depth for duality-based tightening.
 - **Constraint Propagation**: Recommended using for problems with highly nonlinear and complex constraints.
 

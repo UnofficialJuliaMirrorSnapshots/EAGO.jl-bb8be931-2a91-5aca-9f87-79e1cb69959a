@@ -30,7 +30,7 @@ set_mc_differentiability!# DONE
    @test isapprox(y.cc_grad[2], yref.cc_grad[2]; atol = mctol)
 
    y = McCormick.exp10(m)
-   yref = MC{2}(1000.0, 6670.0000000000055, EAGO.IntervalType(9.999999999999999999, 10000.00000000001), SVector{2,Float64}([2302.5850929940457, 0.0]), SVector{2,Float64}([3330.0, 0.0]), false)
+   yref = MC{2}(100.0, 6670.0000000000055, EAGO.IntervalType(9.999999999999999999, 10000.00000000001), SVector{2,Float64}([2302.5850929940457, 0.0]), SVector{2,Float64}([3330.0, 0.0]), false)
 
    @test isapprox(y.cv, yref.cv; atol = mctol)
    @test isapprox(y.cc, yref.cc; atol = mctol)

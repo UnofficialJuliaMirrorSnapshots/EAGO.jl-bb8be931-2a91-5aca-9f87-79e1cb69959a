@@ -65,7 +65,7 @@ function implicit_relax_h!(h::Function, hj::Function, p_mc::Vector{MC{N}}, pref_
 end
 
 """
-    impRelax_f
+    implicit_relax_f
 
 Relaxes the function `f(x,p)` by relaxation the state variable `x` using the implicit
 function determined by `h(x,p)` with `x` in `X` and `p` in `P`. The reference
@@ -84,7 +84,7 @@ function implicit_relax_f(f::Function,h::Function,hj::Function,X::Vector{Interva
 end
 
 """
-    impRelax_fg
+    implicit_relax_fg
 
 Relaxes the functions `f(x,p)` and `g(x,p)` by relaxation the state variable `x`
 using the implicit function determined by `h(x,p)` with `x` in `X` and `p` in `P`.

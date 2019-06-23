@@ -46,7 +46,3 @@ Arbitrarily differentiable relaxations can be constructed for the following oper
 - [x] **minimization** (min)
 - [x] **maximization** (max)
 - [x] **Exponentiation** (pow, ^)
-
-
-### **Reverse Operators**
-- [] **

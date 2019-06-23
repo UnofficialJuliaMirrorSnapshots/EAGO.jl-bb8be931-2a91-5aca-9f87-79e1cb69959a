@@ -9,7 +9,7 @@ makedocs(modules = [EAGO],
          authors = "Matthew Wilhelm",
          sitename = "EAGO.jl: Easy Advanced Global Optimization",
          pages = ["Introduction" => "index.md",
-                  "Why EAGO?" => "why.md",
+                  #"Why EAGO?" => "why.md",
                   "Branch & Bound" => ["BranchBound/overview.md",
                                        "BranchBound/usage.md",
                                        "BranchBound/back.md"],
@@ -23,16 +23,16 @@ makedocs(modules = [EAGO],
                                          "Optimizer/starting.md",
                                          "Optimizer/high_performance.md",
                                          "Optimizer/DomainReduction/feasibility.md",
-                                         "Optimizer/DomainReduction/obbt.md",
-                                         "Optimizer/DomainReduction/parametric_interval.md"],
-                  "Semi-Infinite Programming" => ["SemiInfinite/solving.md"],
+                                         "Optimizer/DomainReduction/obbt.md"],
+                  "Semi-Infinite Programming" => ["SemiInfinite/solving.md",
+                                                  "SemiInfinite/api.md"],
                   "Contributing to EAGO" => ["Dev/contributing.md",
                                              "Dev/future.md"],
                   "References" => "ref.md",
                   "Citing EAGO" => "cite.md"]
 )
 
-#=
+
 deploydocs(
     deps = Deps.pip("pygments", "mkdocs", "python-markdown-math"),
     repo   = "github.com/PSORLab/EAGO.jl.git",
@@ -41,4 +41,3 @@ deploydocs(
     julia = "1.1",
     deps = nothing,
     make = nothing)
-=#

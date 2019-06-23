@@ -18,7 +18,7 @@ $
 We begin importing EAGO, ValidatedNumerics (for interval arithmetic), and JuMP.
 
 ```julia
-using EAGO, ValidatedNumerics, JuMP
+using EAGO, IntervalArithmetic, JuMP
 ```
 
 ### Defining a custom lower bounding problem
@@ -56,13 +56,18 @@ We now add our optimizer to a JuMP model, provide variable bounds, user-defined 
 ```julia
 # Creates a JuMP model with the the lower_problem, upper_problem, and absolute tolerance set by keyword arguments
 m = JuMP.Model(with_optimizer(EAGO.Optimizer, lower_problem! = LowerProblem!, upper_problem! = UpperProblem!,
-                                               absolute_tolerance = 0.001))
+                              absolute_tolerance = 0.001, obbt_depth = 0, dbbt_depth = 0, cp_depth = 0,
+                              treat_as_nonlinear = Int[1; 2; 3; 4]))
 
 # Create the same model m using an options dictionary
 opt_dict = Dict{Symbol, Any}()
 opt_dict[:lower_problem!] = LowerProblem!
 opt_dict[:upper_problem!] = UpperProblem!
 opt_dict[:absolute_tolerance] = 0.001
+opt_dict[:obbt_depth] = 0
+opt_dict[:dbbt_depth] = 0
+opt_dict[:cp_depth] = 0
+opt_dict[:treat_as_nonlinear] = [1; 2; 3; 4]
 
 m = JuMP.Model(with_optimizer(EAGO.Optimizer; opt_dict...))
 

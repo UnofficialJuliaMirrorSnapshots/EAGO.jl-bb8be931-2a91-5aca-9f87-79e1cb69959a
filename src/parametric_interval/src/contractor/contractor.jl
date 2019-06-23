@@ -15,7 +15,7 @@ and exclusion. Inputs:
     - `eDflag::Bool`: flag whether or not extended division occured in the interval box
     - `opt::parametric_interval_params`: option parameters
 """
-function param_intv_contractor!(h::Function, hj::Function, X, Ntemp::Vector{IntervalType},
+function param_intv_contractor(h::Function, hj::Function, X, Ntemp::Vector{IntervalType},
                                 N::Vector{IntervalType},
                                 Xi::Vector{IntervalType}, X1, Xold, t, Y, J, H,
                                 P::Vector{IntervalType}, inc::Vector{Bool},

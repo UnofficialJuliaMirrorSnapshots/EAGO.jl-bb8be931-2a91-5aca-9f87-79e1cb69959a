@@ -24,6 +24,8 @@ module Check_Script_Bridge
         return flag
     end
 
+    @testset "Test Trace Script" begin
+
     function f1(x)
         return sin(3.0*x[1]) + x[2]
     end
@@ -98,95 +100,5 @@ module Check_Script_Bridge
     @test check_node(tape3.nd[1], JuMP._Derivatives.VARIABLE, 1, [-1])
     @test check_node(tape3.nd[2], JuMP._Derivatives.VARIABLE, 2, [-1])
     @test check_node(tape3.nd[3], JuMP._Derivatives.CALLUNIVAR, 3, [1])
-end
-
-println("begin component trace example...")
-
-f(x) = x[1] + x[2]
-xl = [1.0 2.0]
-xu = [2.0 3.0]
-
-function f3(x)
-    z = zeros(typeof(x[1]),2)
-    z[1] = -abs(x[1])::Float64
-    z[2] = -x[1] - 1.0 + z[1]
-    return z
-end
-tape3 = Tracer.trace_script(f3,2)
-
-g_plus = x -> f3(x) .+ [i for i in 1:2]
-tape_plus = Tracer.trace_script(g_plus ,2)
-
-nodes_g, vars_g, out1, out2 = Tracer.get_component_tapes(f3, 2, 2)
-
-#=
-opt = EAGO.Optimizer()
-xl = [1.0,1.0]
-xu = [2.0,2.0]
-fobj(x) = x[1]
-output = EAGO.solve_script(fobj, xl, xu, opt, g = f3)
-
-using JuMP, Ipopt
-m = Model(with_optimizer(Ipopt.Optimizer))
-@variable(m, 1 <= x[1:2] <= 2)
-@NLobjective(m, Min, x[1])
-@NLconstraint(m, -abs(x[1]) <= 0)
-@NLconstraint(m, -x[1] - 1.0 - abs(x[1]) <= 0)
-JuMP.optimize!(m)
-
-evaluator_from_script = opt.working_upper_optimizer.nlp_data.evaluator
-evaluator_from_model = m.moi_backend.optimizer.model.optimizer.nlp_data.evaluator
-
-objective_script = evaluator_from_script.objective
-objective_model = evaluator_from_model.objective
-
-constraints_script = evaluator_from_script.constraints
-constraints_model = evaluator_from_model.constraints
-
-model_script = evaluator_from_script.m
-model_model = evaluator_from_model.m
-#output = solve_script(f, xl, xu)
-=#
-#=
-function f2(x)
-    z = abs(x[1])
-    y = 1.3
-    for i in 1:2
-        y += i*z
     end
-    return sin(3.0*x[2]) + y
 end
-tape2 = Tracer.trace_script(f2,2)
-
-function f3(x)
-    z = abs(x[1])::Float64
-    return z
-end
-tape3 = Tracer.trace_script(f3,2)
-=#
-#Tracer.child_to_parent!(tape5)
-#=
-function f6(x)
-    z::Int64 = (abs(x[1]) + 3.0*x[2])
-    y = 1.3
-    for i in 1:3
-        y += i*z
-    end
-    cos(x[1]) + y
-    return sin(3.0*x[1]) + y*3.0*x[2] + z
-end
-tape6 = Tracer.trace_script(f6,2)
-=#
-#Tracer.child_to_parent!(tape6)
-
-
-#m = Model(with_optimizer(Ipopt.Optimizer))
-#@variable(m,  0 <= x[1:2] <= 1)
-#@variable(m, y)
-#@NLobjective(m, Min, sin(3.0*x[1]) + 3.9*x[2])
-#JuMP.optimize!(m)
-
-#moi_backend = JuMP.backend(m)
-#evaluator = moi_backend.optimizer.model.optimizer.nlp_data.evaluator
-#objstorage =  evaluator.objective
-#+ 3.0*x[2]

@@ -23,7 +23,7 @@ From the Julia REPL, type ] to enter the Pkg REPL mode and run the following com
 pkg> add EAGO
 ```
 
-Currently, EAGO is tied to a beta version of JuMP. This allows a replication
+Currently, EAGO is tied to a 0.19 or greater version of JuMP. This allows a replication
 of some of the internal features shared by EAGO and JuMP's AD scheme aka
 generation of Wergert Tapes pass evaluators between JuMP and EAGO etc.
 As such, you need to install a specific version of JuMP to use EAGO using the following

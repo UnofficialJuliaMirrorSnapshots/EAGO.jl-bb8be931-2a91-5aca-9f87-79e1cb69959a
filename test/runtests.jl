@@ -8,7 +8,7 @@ println("BEGIN TESTING BRANCH AND BOUND LIBRARY...")
 println("TESTING BRANCH AND BOUND LIBRARY COMPLETE.")
 
 println("BEGIN TESTING NODE ACCESS ROUTINES...")
-#include("node_access.jl")                             # WORKING
+include("node_access.jl")                                # WORKING
 println("TESTING NODE ACCESS ROUTINES COMPLETE.")
 
 println("BEGIN TESTING PARAMETRIC INTERVAL LIBRARY...")
@@ -16,23 +16,23 @@ println("BEGIN TESTING PARAMETRIC INTERVAL LIBRARY...")
 println("TESTING PARAMETRIC INTERVAL LIBRARY COMPLETE.")
 
 println("BEGIN TESTING MCCORMICK LIBRARY...")
-#include("McCormick/mccormick.jl")                       # WORKING EXCEPT REVERSE
+#nclude("McCormick/mccormick.jl")                         # WORKING EXCEPT REVERSE
 println("TESTING MCCORMICK LIBRARY COMPLETE.")
 
 println("BEGIN DOMAIN REDUCTION LIBRARY...")
-#include("domain_reduction.jl")
+include("domain_reduction.jl")                             # WORKING
 println("TESTING DOMAIN REDUCTION COMPLETE.")
 
 println("BEGIN RELAXATION ROUTINES...")
-#include("relaxations.jl")
+include("relaxations.jl")                                 # WORKING
 println("TESTING RELAXATION ROUTINES COMPLETE.")
 
 println("BEGIN TESTING OPTIMIZER")
-#include("Optimizer/optimizer.jl")
+include("Optimizer/optimizer.jl")                        # WORKING
 println("END TESTING OPTIMIZER")
 
 println("BEGIN TESTING SCRIPT BRIDGE")
-include("script_optimizer.jl")
+include("script_optimizer.jl")                            # WORKING
 println("END TESTING SCRIPT BRIDGE")
 
 println("BEGIN TESTING SIP SOLVER")

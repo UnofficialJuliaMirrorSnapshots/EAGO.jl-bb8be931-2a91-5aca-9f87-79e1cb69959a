@@ -1,3 +1,6 @@
+
+using EAGO, JuMP
+
 newopt = EAGO.Optimizer()
 
 m = Model(with_optimizer(EAGO.Optimizer))

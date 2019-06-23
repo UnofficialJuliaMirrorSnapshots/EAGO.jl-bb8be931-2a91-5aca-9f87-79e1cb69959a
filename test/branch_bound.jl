@@ -7,6 +7,10 @@ module Check_Branch_Bound
     @testset "Test Continuous Branch Rules" begin
         B = EAGO.Optimizer()
         B.variable_number = 2
+        B.fixed_variable[1]  = false
+        B.fixed_variable[2]  = false
+        B.nonlinear_variable[1] = true
+        B.nonlinear_variable[2] = true
         B.variable_info = [EAGO.VariableInfo(false,1.0,false,2.0,false,false),
                           EAGO.VariableInfo(false,2.0,false,6.0,false,false)]
         S = EAGO.NodeBB(Float64[1.0,5.0], Float64[2.0,6.0], -Inf, Inf, 2, 1, true)
@@ -16,15 +20,6 @@ module Check_Branch_Bound
         @test isapprox(X1.upper_variable_bounds[1], 1.5; atol = 1E-2)
         @test isapprox(X2.lower_variable_bounds[1], 1.5; atol = 1E-2)
         @test isapprox(X2.upper_variable_bounds[1], 2.0; atol = 1E-4)
-        #=
-            X1,X2 = PseudoCostBisect(B,S)
-            @test X1.lower_variable_boundss[1] == 1.5
-            @test X1.upper_variable_boundss[1] ==
-            @test X2.lower_variable_boundss[1] ==
-            @test X2.upper_variable_boundss[1] ==
-
-            indx,pval = PseudoCostBranch(B,S)
-        =#
     end
 
     @testset "Test Implicit Branch Rules" begin

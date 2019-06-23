@@ -1,4 +1,5 @@
-m = Model(with_optimizer(EAGO.Optimizer))
+using EAGO, JuMP
+m = Model(with_optimizer(EAGO.Optimizer, cut_max_iterations = 10))
 
 # ----- Variables ----- #
 @variable(m, objvar)

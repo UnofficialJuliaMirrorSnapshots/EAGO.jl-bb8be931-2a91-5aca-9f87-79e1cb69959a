@@ -30,4 +30,6 @@
 - Stuber, M.D., Scott, J.K., Barton, P.I.: Convex and concave relaxations of implicit functions. *Optim. Methods Softw.* 30(3), 424–460 (2015)
 - A. Tsoukalas and A. Mitsos. Multivariate McCormick Relaxations. *Journal of Global Optimization*, 59:633–662, 2014.
 
-## *Semi-Infinite Programmining*
+## *Semi-Infinite Programming*
+- A. Mitsos. Global optimization of semi-infinite programs via restriction of the right-hand side. *Optimization*, 60(10-11):1291-1308, 2009.
+- Stuber, M.D. and Barton, P. I. Semi-Infinite Optimization With Implicit Functions. *Industrial & Engineering Chemistry Research*, 54:307-317, 2015.
