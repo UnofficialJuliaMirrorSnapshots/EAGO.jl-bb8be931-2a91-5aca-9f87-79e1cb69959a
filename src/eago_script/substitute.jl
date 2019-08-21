@@ -15,23 +15,22 @@ end
 function Template_Graph(nd::Dict{Int,Template_Node}, dag::Vector{Pair{Int,Int}})
     ndlen = length(nd)
     daglen = length(dag)
-    ndlist = [nd[i] for i in 1:daglen]
+    ndlist = [nd[i] for i in 1:ndlen]
     adj = spzeros(Bool, ndlen, ndlen)
     for i in 1:daglen
         @inbounds p = dag[i]
         @inbounds x = p[1]
         @inbounds y = p[2]
-        adj[x, y] = true
+        @inbounds adj[x, y] = true
     end
     num_children = Int[length(nzrange(adj, i)) for i in 1:ndlen]
-    # compute number of children per node
     Template_Graph(ndlist, dag, ndlen, daglen, adj, num_children)
 end
 
 always_true(x) = true
 function Template_Node(type::Symbol, value::Symbol; check::Function = always_true)
     @assert (type == :op || type == :expr || type == :num)
-    Template_Node(type, value, 0.0, check)
+    Template_Node(type, value, NaN, check)
 end
 function Template_Node(type::Symbol, num_value::Float64; check::Function = always_true)
     @assert (type == :num)
@@ -40,6 +39,7 @@ end
 
 const DAG_PATTERNS = Template_Graph[]
 const DAG_SUBSTITUTIONS = Template_Graph[]
+const DAG_SPDICT = Dict{Int,Int}[]
 const DAG_LENGTHS = Int[0,0]
 
 #=
@@ -52,15 +52,31 @@ function register_substitution!(src::Template_Graph, trg::Template_Graph)
     push!(DAG_SUBSTITUTIONS, trg)
     DAG_LENGTHS[1] += 1
     DAG_LENGTHS[2] += 1
+    d = Dict{Int,Int}()
+    for (i, src_nd) in enumerate(src.nd)
+        src_nd_type = src_nd.type
+        if (src_nd_type === :expr || src_nd_type === :num)
+            for (j, trg_nd) in enumerate(trg.nd)
+                if trg_nd.type === src_nd_type
+                    if src_nd.value === trg_nd.value
+                        @inbounds d[j] = i
+                        break
+                    end
+                end
+            end
+        end
+    end
+    push!(DAG_SPDICT, d)
 end
 
-# SHOULD BE DONE
-function matching_info(x::Template_Node, y::NodeData)
+function matching_info(x::Template_Node, y::NodeData,
+                       const_values::Vector{Float64}, parameter_values::Vector{Float64})
     match_flag = false
     if (x.type == :op)
         if (y.nodetype == CALL)
             if haskey(operator_to_id, x.value)
-                if (operator_to_id[x.value] == y.index)
+                @inbounds indx_id = operator_to_id[x.value]
+                if indx_id == y.index
                     match_flag = true
                 end
             else
@@ -68,33 +84,39 @@ function matching_info(x::Template_Node, y::NodeData)
             end
         elseif (y.nodetype == CALLUNIVAR)
             if haskey(univariate_operator_to_id, x.value)
-                if univariate_operator_to_id[x.value] == y.index
+                @inbounds indx_id = univariate_operator_to_id[x.value]
+                if indx_id == y.index
                     match_flag = true
                 end
             else
                 match_flag = false
             end
-        #elseif y.nodetype == SUBEXPRESSION TODO: Add subexpression handling latter
         end
     elseif (x.type == :num)
-        if x.check(x.num_value)
-            match_flag = true
+        if (y.nodetype == VALUE)
+            @inbounds num_value = const_values[y.index]
+        elseif (y.nodetype == PARAMETER)
+            @inbounds num_value = parameter_values[y.index]
+        else
+            match_flag = false
+        end
+        if (y.nodetype == VALUE) || (y.nodetype == PARAMETER)
+            if x.check(num_value)
+                match_flag = true
+            else
+                match_flag = false
+            end
         end
     elseif (x.type == :expr)
         match_flag = true
-    else
-        error("invalid type symbol")
     end
     return match_flag
 end
 
-# SHOULD BE DONE with the exception of matches that have no shared numbers
-# and/or expression symbols
-function is_match(pattern::Template_Graph, indx::Int, nd::Vector{NodeData}, dag_adj::SparseMatrixCSC{Bool,Int})
-
+function is_match(pattern::Template_Graph, indx::Int, nd::Vector{NodeData}, dag_adj::SparseMatrixCSC{Bool,Int},
+                  const_values::Vector{Float64}, parameter_values::Vector{Float64})
     match_flag = true
     match_dict = Dict{Int,Int}()
-    # make pattern adjacency matrix
     pattern_length = pattern.ndlen
     dag_length = pattern.daglen
     pattern_adj = pattern.adj
@@ -105,15 +127,16 @@ function is_match(pattern::Template_Graph, indx::Int, nd::Vector{NodeData}, dag_
     # if any pair of children fail then
     pindx_initial = 1
     queue = Tuple{Int,Int}[(pindx_initial, indx)]
-    while ~isempty(queue) && (match_flag == true)
+    while (~isempty(queue) && (match_flag == true))
         (num_pat, num_dag) = popfirst!(queue)
         @inbounds patt_nd = pattern.nd[num_pat]
         @inbounds dag_nd = nd[num_dag]
-        println("patt_nd: $(patt_nd)")
-        println("dag_nd: $(dag_nd)")
-        if matching_info(patt_nd, dag_nd)
-            if patt_nd.type == :expr
-                match_dict[num_pat] = num_dag
+        match_info_flag = matching_info(patt_nd, dag_nd, const_values, parameter_values)
+        if match_info_flag
+            if patt_nd.type === :expr
+                @inbounds match_dict[num_pat] = num_dag
+            elseif (patt_nd.type === :num) && (patt_nd.num_value === NaN)
+                @inbounds match_dict[num_pat] = num_dag
             end
             @inbounds pat_children_idx = nzrange(pattern_adj, num_pat)
             pat_length = length(pat_children_idx)
@@ -121,35 +144,36 @@ function is_match(pattern::Template_Graph, indx::Int, nd::Vector{NodeData}, dag_
                 @inbounds dag_children_idx = nzrange(dag_adj, num_dag)
                 if pat_length == length(dag_children_idx)
                     for i in 1:pat_length
-                        @inbounds child = dag_children_idx[i]
-                        @inbounds pidx = pat_children_arr[child]
-                        @inbounds didx = dag_children_arr[child]
+                        @inbounds dchild = dag_children_idx[i]
+                        @inbounds pchild = pat_children_idx[i]
+                        @inbounds didx = dag_children_arr[dchild]
+                        @inbounds pidx = pat_children_arr[pchild]
                         push!(queue, (pidx, didx))
                     end
                 else
                     match_flag = false
                     break
                 end
-            else
-                break # checked all pattern nodes and they all pass
             end
         else
             match_flag = false
             break
         end
     end
-
     return match_flag, match_dict
 end
 
-function find_match(indx::Int, nd::Vector{NodeData}, adj::SparseMatrixCSC{Bool,Int})
+function find_match(indx::Int, nd::Vector{NodeData}, adj::SparseMatrixCSC{Bool,Int},
+                    const_values::Vector{Float64}, parameter_values::Vector{Float64})
+
     flag = false
     pattern_number = -1
+    match_dict = Dict{Int,Int}()
     @inbounds sub_len = DAG_LENGTHS[1]
     for i in 1:sub_len
-        println("pattern number: $i")
         @inbounds pattern = DAG_PATTERNS[i]
-        inner_flag, match_dict = is_match(pattern, indx, nd, adj)
+        inner_flag, match_dict = is_match(pattern, indx, nd, adj,
+                                          const_values, parameter_values)
         if inner_flag
             flag = true
             pattern_number = i
@@ -165,87 +189,113 @@ number of child for a pattern element, constant storage vector and it's length
 =#
 function op_node_to_dag!(x::Template_Node, parent::Int, child_len::Int)
     if child_len > 1
-        op = operator_to_id[x.value]
+        @inbounds op = operator_to_id[x.value]
         node = NodeData(CALL, op, parent)
     else
-        op = univariate_operator_to_id[x.value]
+        @inbounds op = univariate_operator_to_id[x.value]
         node = NodeData(CALLUNIVAR, op, parent)
     end
     return node
 end
 
+function bfs_expr_add!(new_nds::Vector{NodeData}, node_count::Int, num_prt::Int,
+                       parent_dict::Dict{Int,Int}, match_dict::Dict{Int,Int},
+                       expr_loc::Int, nd::Vector{NodeData}, adj::SparseMatrixCSC{Bool,Int},
+                       children_arr::Vector{Int})
+    queue = Tuple{Int,Int}[(expr_loc, num_prt)]
+    inner_node_count = node_count
+    while ~isempty(queue)
+        (node_num, prior_prt) = popfirst!(queue) # pop node
+        @inbounds active_node = nd[node_num] # store node
+        new_node = NodeData(active_node.nodetype, active_node.index, prior_prt)
+        inner_node_count += 1 # update node count
+        @inbounds parent_dict[num_prt] = inner_node_count
+        push!(new_nds, new_node)
+        if (active_node.nodetype !== SUBEXPRESSION &&
+            active_node.nodetype !== MOIVARIABLE &&
+            active_node.nodetype !== VARIABLE &&
+            active_node.nodetype !== VALUE)
+            @inbounds children_idx = nzrange(adj, node_num)
+            if (length(children_idx) > 0)
+                for child in children_idx
+                    @inbounds idx = children_arr[child]
+                    push!(queue, (idx, inner_node_count))
+                end
+            end
+        end
+    end
+    inner_node_count
+end
 
 # we assume a tree structure, so if we don't load child nodes,
 # then they are effectively deleted
-# TODO:
 function substitute!(match_num::Int, node_num::Int, prior_prt::Int, nd::Vector{NodeData},
                      const_list::Vector{Float64}, const_len::Int, node_count::Int,
-                     parent_dict::Dict{Int,Int}, queue::Vector{Tuple{Int,Int}},
-                     new_nds::Vector{NodeData})
-    subs_template = DAG_SUBSTITUTIONS[match_num]
-    subs_adj = pattern.adj
+                     parent_dict::Dict{Int,Int}, match_dict::Dict{Int,Int},
+                     queue::Vector{Tuple{Int,Int}}, new_nds::Vector{NodeData},
+                     adj::SparseMatrixCSC{Bool,Int}, children_arr::Vector{Int})
+    @inbounds subs_template = DAG_SUBSTITUTIONS[match_num]
+    @inbounds subs_patt_dict = DAG_SPDICT[match_num]
+    subs_adj = subs_template.adj
     subs_children_arr = rowvals(subs_adj)
     queue = Tuple{Int,Int,Int}[(prior_prt, 1, -1)] # node_num, prior_prt, dag_num, dag_prt
+    inner_node_count = node_count
     while ~isempty(queue)
         (num_prt, num_sub, num_sub_prt) = popfirst!(queue)
-        active_node = subs_template.nd[num_sub]
+        @inbounds active_node = subs_template.nd[num_sub]
         active_type = active_node.type
         if active_type === :op
-            node = op_node_to_dag!(active_node, num_prt, active_node.num_children)
+            @inbounds active_node_children = subs_template.num_children[num_sub]
+            node = op_node_to_dag!(active_node, num_prt, active_node_children)
             push!(new_nds, node)
-            node_count += 1
+            inner_node_count += 1
+            @inbounds parent_dict[num_prt] = inner_node_count
             @inbounds subs_children_idx = nzrange(subs_adj, num_sub)
             if ~isempty(subs_children_idx)
                 for child in subs_children_idx
-                    push!(queue, (node_count, child, num_sub))
+                    @inbounds sub_child = subs_children_arr[child]
+                    push!(queue, (inner_node_count, sub_child, num_sub))
                 end
             end
         elseif active_type === :num
-            push!(const_list, active_node.num_value)
-            const_len += 1
-            node_count += 1
-            node = NodeData(VALUE, const_len, num_prt)
-            push!(new_nds, node)
-        elseif active_type === :expr
-            expr_loc = parent_dict[num_sub]
-            node_prior = nd[expr_loc]
-            node = NodeData(node_prior.nodetype, node_prior.index, num_prt)
-            node_count += 1
-            push!(new_nds, node)
+            if (active_node.num_value !== NaN)
+                push!(const_list, active_node.num_value)
+                const_len += 1
+                inner_node_count += 1
+                @inbounds parent_dict[num_prt] = inner_node_count
+                node = NodeData(VALUE, const_len, num_prt)
+                push!(new_nds, node)
+            else
+                @inbounds pindx = subs_patt_dict[num_sub]
+                @inbounds expr_loc = match_dict[pindx]
+                inner_node_count += 1
+                @inbounds parent_dict[num_prt] = inner_node_count
+                @inbounds node = NodeData(VALUE, nd[expr_loc].index, num_prt)
+                push!(new_nds, node)
+            end
+        elseif active_type === :expr # Need to only use
+            @inbounds pindx = subs_patt_dict[num_sub]
+            @inbounds expr_loc = match_dict[pindx]
+            temp_node_count = bfs_expr_add!(new_nds, inner_node_count, num_prt,
+                                            parent_dict, match_dict, expr_loc,
+                                            nd, adj, children_arr)
+            inner_node_count = temp_node_count
         end
     end
+    return inner_node_count, const_len
 end
 
 # searchs through expression breadth first search that short-cirucits
-# TODO: NEED TO CHECK, SHOULD BE DONE (how to shift )... no need to shift nodes
-# since parents are reference from piror list
-function flatten_expression!(expr::_NonlinearExprData)
+function flatten_expression!(expr::_NonlinearExprData, parameter_values::Vector{Float64})
     nd = expr.nd
     adj = adjmat(nd)
     children_arr = rowvals(adj)
-    node_count = 1
+    node_count = 0
     const_list = expr.const_values
     const_len = length(const_list)
-
-    # if the first node matches a pattern then substitute... else load the first node
-    @inbounds active_node = nd[1]
-    if (active_node.nodetype !== SUBEXPRESSION &&
-        active_node.nodetype !== MOIVARIABLE &&
-        active_node.nodetype !== VARIABLE &&
-        active_node.nodetype !== VALUE)
-        is_match, match_num, match_dict = find_match(1, nd, adj)
-        if is_match
-            node_count, const_len = substitute!(match_num, node_num, nd, const_list,
-                                               const_len, 0,
-                                               parent_dict, match_dict, queue, new_nds)
-        else
-            new_nds = NodeData[active_node]
-            parent_dict[1] = 1
-            node_count = 1
-            push!(queue, (1,-1))
-        end
-    end
-
+    parent_dict = Dict{Int,Int}(-1 => -1)
+    queue = Tuple{Int,Int}[(1,-1)]
+    new_nds = NodeData[]
     while ~isempty(queue)
         (node_num, prior_prt) = popfirst!(queue)
         @inbounds active_node = nd[node_num]
@@ -253,26 +303,29 @@ function flatten_expression!(expr::_NonlinearExprData)
             active_node.nodetype !== MOIVARIABLE &&
             active_node.nodetype !== VARIABLE &&
             active_node.nodetype !== VALUE)
-            @inbounds children_idx = nzrange(adj, node_num)
-            if (length(children_idx) > 0) # has any children
-                for child in children_idx
-                    is_match, match_num, match_dict = findmatch(children_arr[child], nd, adj)
-                    if ~is_match
+            is_match, match_num, match_dict = find_match(node_num, nd, adj, const_list, parameter_values)
+            if ~is_match
+                @inbounds parent_num = parent_dict[prior_prt]
+                push!(new_nds, NodeData(active_node.nodetype, active_node.index, parent_num))
+                node_count += 1
+                @inbounds parent_dict[node_num] = node_count
+                @inbounds children_idx = nzrange(adj, node_num) # ADD CHILDREN
+                if (length(children_idx) > 0)
+                    for child in children_idx
                         @inbounds idx = children_arr[child]
-                        @inbounds cn = nd[idx]
-                        @inbounds parent_num = parent_dict[node_num]
                         push!(queue, (idx, node_num))
-                        push!(new_nds, NodeData(cn.nodetype, cn.index, parent_num))
-                        node_count += 1
-                        parent_dict[idx] = node_count
-                    else
-                        node_count, const_len = substitute!(match_num, node_num, prior_prt,
-                                                            nd, const_list, const_len, node_count,
-                                                            parent_dict, match_dict, queue, new_nds)
                     end
                 end
+             else
+                node_count, const_len = substitute!(match_num, node_num, prior_prt,
+                                                    nd, const_list, const_len,
+                                                    node_count, parent_dict, match_dict,
+                                                    queue, new_nds, adj, children_arr)
             end
-
+        else
+            push!(new_nds, NodeData(active_node.nodetype, active_node.index, prior_prt))
+            node_count += 1
+            @inbounds parent_dict[node_num] = node_count
         end
     end
     expr.nd = new_nds
