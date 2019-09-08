@@ -8,6 +8,8 @@ module EAGO
 
     using SparseArrays: SparseMatrixCSC, spzeros, rowvals, nzrange, nonzeros
     using StaticArrays: SVector
+    using LinearAlgebra: eigmin
+    using ForwardDiff: jacobian
 
     import Calculus.symbolic_derivatives_1arg
     import Printf.@sprintf
@@ -18,12 +20,16 @@ module EAGO
                                expm1, log, log2, log10, log1p, sqrt,
                                sin, cos, tan, min, max, sec, csc, cot, step,
                                sign, dist, mid, pow, Interval, sinh, cosh, ∩,
-                               IntervalBox, bisect, isdisjoint
-                               # faster versions of: ^, inv, exp2, exp10, tanh,
-                               # asinh, acosh, atanh,
+                               IntervalBox, bisect, isdisjoint, ^, exp2, exp10,
+                               tanh, asinh, cosh, atanh
 
 
     const MOI = MathOptInterface
+    #const SAF = ScalarAffineFunction{Float64}
+    #const SQF = ScalarQuadraticFunction{Float64}
+    #const LT = LessThan{Float64}
+    #const GT = GreaterThan{Float64}
+    #const ET = EqualTo{Float64}
     const MOIU = MOI.Utilities
 
     include("mccormick_library/mccormick.jl")

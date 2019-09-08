@@ -21,8 +21,10 @@ end
 
 @testset "Poor Man's LP" begin
     # Puranik 2017 example
-    opt1 = EAGO.Optimizer()
-    x = MOI.add_variables(opt1,3)
+    opt1 = EAGO.Optimizer(udf_scrubber_flag = false,
+                          udf_to_JuMP_flag = false,
+                          verbosity = 0)
+    x = MOI.add_variables(opt1, 3)
 
     MOI.add_constraint(opt1,MOI.SingleVariable(x[1]), MOI.LessThan(4.0))
     MOI.add_constraint(opt1,MOI.SingleVariable(x[1]), MOI.GreaterThan(-2.0))
@@ -42,7 +44,7 @@ end
     n1.depth = 3
 
     opt1.variable_index_to_storage = Dict{Int,Int}(1 => 1, 2 => 2, 3 => 3)
-    opt1.nonlinear_variable = Dict{Int,Int}(1 => true, 2 => true, 3 => true)
+    opt1.bisection_variable = Dict{Int,Int}(1 => true, 2 => true, 3 => true)
 
     feas1 = EAGO.poor_man_lp(opt1,n1)
     feas1 = EAGO.poor_man_lp(opt1,n1)
@@ -52,8 +54,10 @@ end
 end
 
 @testset "Classify Quadratic Types" begin
-    opt1 = EAGO.Optimizer()
-    x = MOI.add_variables(opt1,3)
+    opt1 = EAGO.Optimizer(udf_scrubber_flag = false,
+                          udf_to_JuMP_flag = false,
+                          verbosity = 0)
+    x = MOI.add_variables(opt1, 3)
 
     MOI.add_constraint(opt1,MOI.SingleVariable(x[1]), MOI.LessThan(4.0))
     MOI.add_constraint(opt1,MOI.SingleVariable(x[1]), MOI.GreaterThan(-2.0))
@@ -108,7 +112,9 @@ end
 end
 
 @testset "Quadratic Domain Reduction (Univariate)" begin
-    m = EAGO.Optimizer()
+    m = EAGO.Optimizer(udf_scrubber_flag = false,
+                       udf_to_JuMP_flag = false,
+                       verbosity = 0)
 
     n2 = NodeBB()
     n2.lower_variable_bounds = [-10.0, -10.0, -10.0]
@@ -176,7 +182,10 @@ end
 =#
 
 @testset "Optimization-Based Bound Tightening (Linear)" begin
-    m = Model(with_optimizer(EAGO.Optimizer))
+    m = Model(with_optimizer(EAGO.Optimizer,
+                             udf_scrubber_flag = false,
+                             udf_to_JuMP_flag = false,
+                             verbosity = 0))
     xL = [-4.0; -2.0]
     xU = [4.0; 2.0]
 
@@ -195,8 +204,8 @@ end
 
     optimize!(m)
     opt = m.moi_backend.optimizer.model.optimizer
-    m.moi_backend.optimizer.model.optimizer.nonlinear_variable[1] = true
-    m.moi_backend.optimizer.model.optimizer.nonlinear_variable[2] = true
+    m.moi_backend.optimizer.model.optimizer.bisection_variable[1] = true
+    m.moi_backend.optimizer.model.optimizer.bisection_variable[2] = true
     m.moi_backend.optimizer.model.optimizer.obbt_variables = [MOI.VariableIndex(1), MOI.VariableIndex(2)]
     m.moi_backend.optimizer.model.optimizer.global_lower_bound = -12.0
     m.moi_backend.optimizer.model.optimizer.global_upper_bound = 0.0
@@ -213,7 +222,10 @@ end
 end
 
 @testset "Optimization-Based Bound Tightening (Nonlinear)" begin
-    m = Model(with_optimizer(EAGO.Optimizer))
+    m = Model(with_optimizer(EAGO.Optimizer,
+                             udf_scrubber_flag = false,
+                             udf_to_JuMP_flag = false,
+                             verbosity = 0))
     xL = [0.0; -2.0]
     xU = [4.0; 4.0]
 
@@ -227,8 +239,8 @@ end
 
     optimize!(m)
     opt = m.moi_backend.optimizer.model.optimizer
-    m.moi_backend.optimizer.model.optimizer.nonlinear_variable[1] = true
-    m.moi_backend.optimizer.model.optimizer.nonlinear_variable[2] = true
+    m.moi_backend.optimizer.model.optimizer.bisection_variable[1] = true
+    m.moi_backend.optimizer.model.optimizer.bisection_variable[2] = true
     m.moi_backend.optimizer.model.optimizer.obbt_variables = [MOI.VariableIndex(1), MOI.VariableIndex(2)]
     m.moi_backend.optimizer.model.optimizer.global_lower_bound = -10.0
     m.moi_backend.optimizer.model.optimizer.global_upper_bound = 10.0
