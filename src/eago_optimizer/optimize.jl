@@ -32,61 +32,58 @@ function gen_quadratic_storage!(x::Optimizer)
 
         v = gen_quad_sparsity(func)
         nv = length(v)
-        push!(x._quadratic_leq_sparsity, v)
+        @inbounds nzvar = variable_index[v]
+        push!(x._quadratic_leq_sparsity, nzvar)
         push!(x._quadratic_leq_gradnz, nv)
 
         d = ImmutableDict{Int64,Int64}()
         for (i, val) in enumerate(v)
-            ImmutableDict(d, val => i)
+            d = ImmutableDict(d, val => i)
         end
         push!(x._quadratic_leq_dict, d)
 
-        @inbounds nzvar = variable_index[v]
         func = SAF(SAT.(zeros(nv), nzvar), 0.0)
         ci = MOI.add_constraint(opt, func, LT(0.0))
         push!(x._quadratic_ci_leq, ci)
-
     end
 
     for (func, set, ind) in x._quadratic_geq_constraints
 
         v = gen_quad_sparsity(func)
         nv = length(v)
-        push!(x._quadratic_geq_sparsity, v)
+        @inbounds nzvar = variable_index[v]
+        push!(x._quadratic_geq_sparsity, nzvar)
         push!(x._quadratic_geq_gradnz, nv)
 
         d = ImmutableDict{Int64,Int64}()
         for (i, val) in enumerate(v)
-            ImmutableDict(d, val => i)
+            d = ImmutableDict(d, val => i)
         end
         push!(x._quadratic_geq_dict, d)
 
-        @inbounds nzvar = variable_index[v]
         func = SAF(SAT.(zeros(nv), nzvar), 0.0)
         ci = MOI.add_constraint(opt, func, LT(0.0))
         push!(x._quadratic_ci_geq, ci)
-
     end
 
     for (func, set, ind) in x._quadratic_eq_constraints
 
         v = gen_quad_sparsity(func)
         nv = length(v)
-        push!(x._quadratic_eq_sparsity, v)
+        @inbounds nzvar = variable_index[v]
+        push!(x._quadratic_eq_sparsity, nzvar)
         push!(x._quadratic_eq_gradnz, nv)
 
         d = ImmutableDict{Int64,Int64}()
         for (i, val) in enumerate(v)
-            ImmutableDict(d, val => i)
+            d = ImmutableDict(d, val => i)
         end
         push!(x._quadratic_eq_dict, d)
 
-        @inbounds nzvar = variable_index[v]
         func = SAF(SAT.(zeros(nv), nzvar), 0.0)
         c1 = MOI.add_constraint(opt, func, LT(0.0))
         c2 = MOI.add_constraint(opt, func, LT(0.0))
-        push!(x._quadratic_ci_eq, c1, c2)
-
+        push!(x._quadratic_ci_eq, (c1, c2))
     end
     return
 end
@@ -99,14 +96,20 @@ quadratic cut.
 """
 function load_relaxed_problem!(x::Optimizer)
     opt = x.relaxed_optimizer
+    #opt = GLPK.Optimizer()
 
     # add variables and indices
-    variable_index = MOI.add_variables(opt, x._variable_number)
-    variable = SV.(variable_index)
-    append!(x._lower_variable_index, variable_index)
-    append!(x._lower_variable, variable)
+    variable_number = x._variable_number
+    for i in 1:variable_number
+        variable_index = MOI.add_variable(opt)
+        single_variable = SV(variable_index)
+        push!(x._lower_variable_index, variable_index)
+        push!(x._lower_variable, single_variable) # FIX ME WHEN
+    end
 
-    for i in 1:x._variable_number
+    # add variables
+    variable = x._lower_variable
+    for i in 1:variable_number
 
         @inbounds var = x._variable_info[i]
         @inbounds variable_i = variable[i]
@@ -117,28 +120,20 @@ function load_relaxed_problem!(x::Optimizer)
                 @inbounds bnd = var.lower_bound
                 ci1 = MOI.add_constraint(opt, variable_i, ET(bnd))
                 push!(x._lower_variable_et, ci1)
-                push!(x._lower_variable_style, 1)
-
-            elseif var.has_lower_bound && var.has_upper_bound
-                @inbounds bnd = var.upper_bound
-                ci2 = MOI.add_constraint(opt, variable_i, LT(bnd))
-                push!(x._lower_variable_lt, ci2)
-                @inbounds bnd = var.lower_bound
-                ci3 = MOI.add_constraint(opt, variable_i, GT(bnd))
-                push!(x._lower_variable_gt, ci3)
-                push!(x._lower_variable_style, 2)
-
-            elseif var.has_lower_bound
-                @inbounds bnd = var.lower_bound
-                ci4 = MOI.add_constraint(opt, variable_i, GT(bnd))
-                push!(x._lower_variable_gt, ci4)
-                push!(x._lower_variable_style, 3)
-
-            elseif var.has_upper_bound
-                @inbounds bnd = var.upper_bound
-                ci5 = MOI.add_constraint(opt, var_xi, LT(bnd))
-                push!(x._lower_variable_lt, ci5)
-                push!(x._lower_variable_style, 4)
+                push!(x._lower_variable_et_indx, i)
+            else
+                if var.has_lower_bound
+                    @inbounds bnd = var.lower_bound
+                    ci4 = MOI.add_constraint(opt, variable_i, GT(bnd))
+                    push!(x._lower_variable_gt, ci4)
+                    push!(x._lower_variable_gt_indx, i)
+                end
+                if var.has_upper_bound
+                    @inbounds bnd = var.upper_bound
+                    ci5 = MOI.add_constraint(opt, variable_i, LT(bnd))
+                    push!(x._lower_variable_lt, ci5)
+                    push!(x._lower_variable_lt_indx, i)
+                end
             end
         end
     end
@@ -157,22 +152,22 @@ function load_relaxed_problem!(x::Optimizer)
     gen_quadratic_storage!(x)
 
     # add a linear constraint for each nonlinear constraint
-    eval_block = x._working_evaluator_block
-    evaluator = eval_block.evaluator
-    count_lower = 0
-    count_upper = 0
-    for (j, bns) in enumerate(eval_block.constraint_bounds)
-        @inbounds nzidx = evaluator.constraints[j].grad_sparsity
-        @inbounds nzvar = variable_index[nzidx]
-        func = SAF(SAT.(zeros(length(nzidx)), nzvar), 0.0)
+    evaluator = x._relaxed_evaluator
+    constraint_bounds = x._relaxed_constraint_bounds
+    for (j, bns) in enumerate(constraint_bounds)
+        sparsity = grad_sparsity(evaluator, j+1)
+        @inbounds nzvar = x._lower_variable_index[sparsity]
+        func = SAF(SAT.(zeros(length(sparsity)), nzvar), 0.0)
         if !(bns.upper == Inf)
             ci = MOI.add_constraint(opt, func, LT(0.0))
-            push!(x._upper_nlp_affine, ci)
-            count_upper += 1
+            push!(x._lower_nlp_affine, ci)
+            push!(x._lower_nlp_affine_indx, j)
+            push!(x._lower_nlp_sparsity, sparsity)
         elseif !(bns.lower == Inf)
             ci = MOI.add_constraint(opt, func, LT(0.0))
-            push!(x._lower_nlp_affine, ci)
-            count_lower += 1
+            push!(x._upper_nlp_affine, ci)
+            push!(x._upper_nlp_affine_indx, j)
+            push!(x._upper_nlp_sparsity, sparsity)
         end
     end
 
@@ -188,16 +183,18 @@ function linear_solve!(m::Optimizer)
 
     opt = m.relaxed_optimizer
 
-    # TODO: Nonlinear terms which are actually linear
-    if isa(m._objective, SV)
-        MOI.set(opt, MOI.ObjectiveFunction{SV}(), m._objective)
-    elseif isa(m._objective, SAF)
-        MOI.set(opt, MOI.ObjectiveFunction{SAF}(), m._objective)
+    # TODO: Add check for nonlinear terms which are actually linear
+    if m._objective_is_sv
+        MOI.set(opt, MOI.ObjectiveFunction{SV}(), m._objective_sv)
+    elseif m._objective_is_saf
+        MOI.set(opt, MOI.ObjectiveFunction{SAF}(), m._objective_saf)
     end
 
     MOI.optimize!(opt)
-    println("opt: $opt")
+    m._objective_value = MOI.get(opt, MOI.ObjectiveValue())
     m._solution_value = MOI.get(opt, MOI.ObjectiveValue())
+    m._global_lower_bound = MOI.get(opt, MOI.ObjectiveValue())
+    m._global_upper_bound = MOI.get(opt, MOI.ObjectiveValue())
     m._termination_status_code = MOI.get(opt, MOI.TerminationStatus())
     m._result_status_code = MOI.get(opt, MOI.PrimalStatus())
     m._continuous_solution = MOI.get.(opt, MOI.VariablePrimal(), m._lower_variable_index)
@@ -218,14 +215,14 @@ function convert_to_min!(x::Optimizer)
             x._objective = SAF(SAT[SAT(-1.0, x._objective.variable)], 0.0)
         elseif isa(x._objective, SAF)
             @inbounds x._objective.terms[:] = SAT.(-getfield.(x._objective.terms, :coefficient),
-                                                        getfield.(x._objective.terms, :variable_index))
+                                                    getfield.(x._objective.terms, :variable_index))
             x._objective.constant *= -1.0
         elseif isa(x._objective, SQF)
             @inbounds x._objective.affine_terms[:] = SAT.(-getfield.(x._objective.affine_terms, :coefficient),
                                                                getfield.(x._objective.affine_terms, :variable_index))
             @inbounds x._objective.quadratic_terms[:] = SQT.(-getfield.(x._objective.quadratic_terms, :coefficient),
-                                                                  getfield.(x._objective.quadratic_terms, :variable_index_1),
-                                                                  getfield.(x._objective.quadratic_terms, :variable_index_2))
+                                                              getfield.(x._objective.quadratic_terms, :variable_index_1),
+                                                              getfield.(x._objective.quadratic_terms, :variable_index_2))
             x._objective.constant *= -1.0
         else
             nd = x._nlp_data.nlobj.nd
@@ -239,25 +236,41 @@ function convert_to_min!(x::Optimizer)
 end
 
 # TODO
+
+has_evaluator(x::MOI.NLPBlockData) = ~isnothing(x.evaluator)
+
+function initialize_scrub!(m::Optimizer, y::JuMP.NLPEvaluator)
+    m.presolve_scrubber_flag && Script.scrub!(y.m.nlp_data)
+    if m.presolve_to_JuMP_flag
+        Script.udf_loader!(m)
+    end
+    return
+end
+
 function initialize_evaluators!(m::Optimizer, flag::Bool)
 
-    num_nlp_constraints = length(m._nlp_data.constraint_bounds)
+    nlp_data = m._nlp_data
 
-    # Build the JuMP NLP evaluator
-    evaluator = m._nlp_data.evaluator
-    features = MOI.features_available(evaluator)
-    has_hessian = (:Hess in features)
-    init_feat = [:Grad, :ExprGraph]
-    num_nlp_constraints > 0 && push!(init_feat, :Jac)
-    MOI.initialize(evaluator, init_feat)
+    if has_evaluator(nlp_data)
 
-    # Scrub user-defined functions
-    if ~isa(evaluator, EAGO.EmptyNLPEvaluator)
-        m.presolve_scrubber_flag && Script.scrub!(evaluator.m.nlp_data)
-        if m.presolve_to_JuMP_flag
-            Script.udf_loader!(m)
-        end
+        # Build the JuMP NLP evaluator
+        evaluator = nlp_data.evaluator::JuMP.NLPEvaluator
+        num_nlp_constraints = length(nlp_data.constraint_bounds)
+        features = MOI.features_available(evaluator)
+        has_hessian = (:Hess in features)
+        init_feat = [:Grad, :ExprGraph]
+        num_nlp_constraints > 0 && push!(init_feat, :Jac)
+        MOI.initialize(evaluator, init_feat)
+
+        # Scrub user-defined functions
+        initialize_scrub!(m, evaluator)
+
+        built_evaluator = build_nlp_evaluator(m._variable_number, NS(), evaluator, m, false)
+        m._relaxed_evaluator = built_evaluator
+        m._relaxed_eval_has_objective = m._nlp_data.has_objective
+        append!(m._relaxed_constraint_bounds, m._nlp_data.constraint_bounds)
     end
+
     #m.nlp_data.evaluator = evaluator #TODO: Rebuilt entire nlp_block...
 
     # Transform UDFs to JuMP ASTs
@@ -270,15 +283,7 @@ function initialize_evaluators!(m::Optimizer, flag::Bool)
     #m.nlp.evaluator = unpacked_evaluator
     #####
 
-    # Creates initial EAGO nlp evaluator for relaxations
-    m._working_evaluator_block = m._nlp_data
-    if ~isa(m._nlp_data.evaluator, EAGO.EmptyNLPEvaluator) || false #flag
-        built_evaluator = build_nlp_evaluator(m._variable_number, m._nlp_data.evaluator, m, false)
-        m._working_evaluator_block = MOI.NLPBlockData(m._nlp_data.constraint_bounds,
-                                                      built_evaluator,
-                                                      m._nlp_data.has_objective)
-    end
-    return evaluator
+    return
 end
 
 # DONE
@@ -291,7 +296,7 @@ and populates the _fixed_variable storage array.
 function label_fixed_variables!(m::Optimizer)
     lbd = 0.0
     ubd = 0.0
-    @simd for i in 1:m._variable_number
+    for i in 1:m._variable_number
         @inbounds lbd = m._variable_info[i].lower_bound
         @inbounds ubd = m._variable_info[i].upper_bound
         if lbd == ubd
@@ -307,50 +312,58 @@ end
 
 Returns true if `func` < 0  based on eigenvalue tests, false otherwise.
 """
-function is_convex_quadratic(func::SQF, NumVar::Int, mult::Float64)
+function is_convex_quadratic(func::SQF, mult::Float64)
     # Riguous Convexity Test
-    Q = spzeros(NumVar, NumVar)
+    flag = false
+    row = Int64[]
+    column = Int64[]
+    value = Float64[]
     for term in func.quadratic_terms
-        if term.coefficient != 0.0
-            Q[term.variable_index_1.value, term.variable_index_2.value] = mult*term.coefficient
+        coeff = term.coefficient
+        if coeff != 0.0
+            push!(row, term.variable_index_1.value)
+            push!(column, term.variable_index_2.value)
+            push!(value, mult*coeff)
         end
     end
+    Q = sparse(row, column, value)
     if length(Q.nzval) > 1
         eigval = eigmin(Array(Q))
         if (eigval) > 0.0
-            return true
+            flag = true
         end
-    else
-        if Q.nzval[1] > 0.0
-            return true
-        else
-            return false
-        end
+    elseif Q.nzval[1] > 0.0
+        flag =  true
     end
-    return false
+    return flag
 end
 
 
 """
-    quadratic_convexity!
+    label_quadratic_convexity!
 
 Assigns boolean value to constraint_convexity dictionary entry corresponding to
 constraint index that is true if constraint is shown to be convex and false
 otherwise.
 """
-function quadratic_convexity!(x::Optimizer)
-    for (func, set, ind) in x._quadratic_leq_constraints
-        MOIindx = CI{SQF,LT}(ind)
-        x._constraint_convexity[MOIindx] = is_convex_quadratic(func, x._variable_number, 1.0)
+function label_quadratic_convexity!(x::Optimizer)
+
+    for i in 1:length(x._quadratic_leq_constraints)
+        @inbounds func, set, ind = x._quadratic_leq_constraints[i]
+        @inbounds x._quadratic_leq_convexity[i] = is_convex_quadratic(func, 1.0)
     end
-    for (func, set, ind) in x._quadratic_geq_constraints
-        MOIindx = CI{SQF, GT}(ind)
-        x._constraint_convexity[MOIindx] = is_convex_quadratic(func, x.variable_number, -1.0)
+
+    for i in 1:length(x._quadratic_geq_constraints)
+        @inbounds func, set, ind = x._quadratic_geq_constraints[i]
+        @inbounds x._quadratic_geq_convexity[i] = is_convex_quadratic(func, -1.0)
     end
-    for (func, set, ind) in x._quadratic_eq_constraints
-        MOIindx = CI{SQF, ET}(ind)
-        x.constraint_convexity[MOIindx] = false
+
+    for i in 1:length(x._quadratic_eq_constraints)
+        @inbounds func, set, ind = x._quadratic_geq_constraints[i]
+        @inbounds x._quadratic_eq_convexity_1[i] = is_convex_quadratic(func, 1.0)
+        @inbounds x._quadratic_eq_convexity_2[i] = is_convex_quadratic(func, -1.0)
     end
+
     return
 end
 
@@ -383,113 +396,132 @@ function local_solve!(x::Optimizer)
     return
 end
 
+function build_nlp_kernel!(d::Evaluator{N,T}, src::JuMP.NLPEvaluator, x::Optimizer, bool_flag::Bool) where {N,T<:RelaxTag}
+
+    m = src.m::Model
+    num_variables_ = JuMP.num_variables(m)
+    d.variable_number = num_variables_
+    nldata = m.nlp_data::JuMP._NLPData
+    parameter_values = nldata.nlparamvalues
+
+    # Copy state of user-defined multivariable functions
+    d.has_user_mv_operator = src.disable_2ndorder
+    d.last_x = fill(NaN, d.variable_number)
+    d.last_node = NodeBB()
+
+    # Set valued operators must contain a (sub)gradient and/or (sub)hessian field to support 1st/2nd order eval
+    d.disable_1storder = false
+
+    # Add objective functions, constraints, subexpressions
+    d.has_nlobj = src.has_nlobj
+    if src.has_nlobj
+        copy_to_function!(d, 1, src.objective)
+    end
+
+    for i in 1:length(src.constraints)
+        copy_to_function!(d, i + 1, src.constraints[i])
+    end
+
+    d.subexpression_order = src.subexpression_order
+    d.subexpression_linearity = src.subexpression_linearity
+
+    d.subexpression_values_set = MC{N,T}[]
+    d.subexpression_values_flt = Float64[]
+    d.subexpressions = SubexpressionSetStorage{N}[]
+    for i in 1:length(src.subexpressions)
+        copy_to_subexpr!(d, src.subexpressions[i])
+    end
+    d.subexpression_values_set = fill(zero(MC{N,T}), length(d.subexpressions))
+    d.subexpression_values_flt = fill(NaN, length(d.subexpressions))
+
+    # Add bounds to evaluator
+    for bnds in x._nlp_data.constraint_bounds
+        push!(d.constraints_lbd, bnds.lower)
+        push!(d.constraints_ubd, bnds.upper)
+    end
+
+    # USER OUTPUT BUFFERS??????
+    d.cp_tolerance = x.cp_interval_tolerance
+    d.cp_reptitions = x.cp_interval_reptitions
+    d.has_reverse = x._cp_evaluation_reverse
+    d.subgrad_tighten = x.subgrad_tighten
+    d.subgrad_tighten_reverse = x.subgrad_tighten_reverse
+    d.jac_storage = fill(zero(MC{N,T}), max(num_variables_, nldata.largest_user_input_dimension))
+
+    d.constraint_number = length(d.constraints)
+    d.subexpression_number = length(d.subexpressions)
+
+    # calculate an index for each variable via search on
+    unvisited_tuple = (-1,-1,-1)
+    d.index_to_variable = fill(unvisited_tuple, (d.variable_number,))
+    for (indx, node) in enumerate(d.objective.nd)
+        op = node.index
+        ntype = node.nodetype
+        if (ntype == JuMP._Derivatives.VARIABLE)
+            current_value = d.index_to_variable[op]
+            if (current_value == unvisited_tuple)
+                d.index_to_variable[op] = (indx, 1, 1)
+            end
+        elseif ntype == JuMP._Derivatives.VALUE
+            @inbounds d.objective.numberstorage[indx] = d.objective.const_values[op]
+            @inbounds d.objective.numvalued[indx] = true
+        elseif ntype == JuMP._Derivatives.PARAMETER
+            @inbounds d.objective.numberstorage[indx] = parameter_values[op]
+            @inbounds d.objective.numvalued[indx] = true
+        end
+    end
+    for (cindx,constraint) in enumerate(d.constraints)
+        for (indx,node) in enumerate(constraint.nd)
+            op = node.index
+            if node.nodetype == JuMP._Derivatives.VARIABLE
+                current_value = d.index_to_variable[op]
+                if (current_value == unvisited_tuple)
+                    d.index_to_variable[op] = (indx, cindx, 2)
+                end
+            elseif node.nodetype == JuMP._Derivatives.VALUE
+                @inbounds constraint.numberstorage[indx] = constraint.const_values[op]
+                @inbounds constraint.numvalued[indx] = true
+            elseif node.nodetype == JuMP._Derivatives.PARAMETER
+                @inbounds constraint.numberstorage[indx] = parameter_values[op]
+                @inbounds constraint.numvalued[indx] = true
+            end
+        end
+    end
+    for (cindx,subexpress) in enumerate(d.subexpressions)
+        for (indx,node) in enumerate(subexpress.nd)
+            op = node.index
+            if node.nodetype == JuMP._Derivatives.VARIABLE
+                current_value = d.index_to_variable[op]
+                if (current_value == unvisited_tuple)
+                    d.index_to_variable[op] = (indx, cindx, 3)
+                end
+            elseif node.nodetype == JuMP._Derivatives.VALUE
+                @inbounds subexpress.numberstorage[indx] = subexpress.const_values[op]
+                @inbounds subexpress.numvalued[indx] = true
+            elseif node.nodetype == JuMP._Derivatives.PARAMETER
+                @inbounds subexpress.numberstorage[indx] = parameter_values[op]
+                @inbounds subexpress.numvalued[indx] = true
+            end
+        end
+    end
+
+    d.subexpression_isnum = fill(true, (d.subexpression_number,))
+    return
+end
+
 """
     build_nlp_evaluator
 
 Builds the evaluator used to generate relaxations of the nonlinear equations
 and constraints from a source model.
 """
-function build_nlp_evaluator(N::Int, src::T, x::Optimizer, bool_flag::Bool) where {T<:MOI.AbstractNLPEvaluator}
+function build_nlp_evaluator(N::Int64, s::T, src::JuMP.NLPEvaluator, x::Optimizer, bool_flag::Bool) where {T<:RelaxTag}
 
-    # Checks to see if nlp data block evaluator is present
-    if ~isa(src, EAGO.EmptyNLPEvaluator)
+    # Creates the empty evaluator
+    d::Evaluator{N,T} = Evaluator{N,T}()
+    build_nlp_kernel!(d, src, x, bool_flag)
 
-        # Creates the empty evaluator
-        d = Evaluator{N}(src.m)
-
-        num_variables_ = JuMP.num_variables(d.m)
-        d.variable_number = num_variables_
-        nldata::JuMP._NLPData = deepcopy(d.m.nlp_data)
-
-        # Copy state of user-defined multivariable functions
-        d.has_user_mv_operator = src.disable_2ndorder
-        d.parameter_values = nldata.nlparamvalues
-        d.last_x = fill(NaN, d.variable_number)
-        d.last_node = NodeBB()
-
-        # Set valued operators must contain a (sub)gradient and/or (sub)hessian field to support 1st/2nd order eval
-        d.disable_1storder = false
-        d.disable_2ndorder = true
-
-        # Add objective functions, constraints, subexpressions
-        d.has_nlobj = isa(nldata.nlobj, JuMP._NonlinearExprData)
-        if (src.has_nlobj)
-            d.objective = copy_to_function(N, src.objective)
-        end
-
-        for i in 1:length(src.constraints)
-            push!(d.constraints, copy_to_function(N, src.constraints[i]))
-        end
-
-        d.subexpression_order = src.subexpression_order
-        d.subexpression_linearity = src.subexpression_linearity
-        d.subexpressions_as_julia_expressions = Any[]
-        if isdefined(src, :subexpressions_as_julia_expressions)
-            d.subexpressions_as_julia_expressions = src.subexpressions_as_julia_expressions
-        end
-
-        d.subexpression_values_set = MC{N}[]
-        d.subexpression_values_flt = Float64[]
-        d.subexpressions = SubexpressionSetStorage{N}[]
-        for i in 1:length(src.subexpressions)
-            temp = copy_to_subexpr(N, src.subexpressions[i])
-            push!(d.subexpressions,temp)
-        end
-        d.subexpression_values_set = fill(NaN, length(d.subexpressions))
-        d.subexpression_values_flt = fill(NaN, length(d.subexpressions))
-
-        # Add bounds to evaluator
-        for bnds in x._nlp_data.constraint_bounds
-            push!(d.constraints_lbd, bnds.lower)
-            push!(d.constraints_ubd, bnds.upper)
-        end
-
-        # USER OUTPUT BUFFERS??????
-        d.cp_tolerance = x.cp_interval_tolerance
-        d.cp_reptitions = x.cp_interval_reptitions
-        d.has_reverse = x._cp_evaluation_reverse
-        d.subgrad_tighten = x.subgrad_tighten
-        d.subgrad_tighten_reverse = x.subgrad_tighten_reverse
-        d.jac_storage = Array{Float64}(undef, max(num_variables_, d.m.nlp_data.largest_user_input_dimension))
-
-        d.constraint_number = length(d.constraints)
-        d.subexpression_number = length(d.subexpressions)
-
-        # calculate an index for each variable via search on
-        d.index_to_variable = fill((-1,-1,-1), (d.variable_number,))
-        for (oindx,node) in enumerate(d.objective.nd)
-            if (node.nodetype == JuMP._Derivatives.VARIABLE)
-                current_value = d.index_to_variable[node.index]
-                if (current_value[1] == current_value[2] == current_value[3] == -1)
-                    d.index_to_variable[node.index] = (oindx, 1, 1)
-                end
-            end
-        end
-        for (cindx,constraint) in enumerate(d.constraints)
-            for (indx,node) in enumerate(constraint.nd)
-                if (node.nodetype == JuMP._Derivatives.VARIABLE)
-                    current_value = d.index_to_variable[node.index]
-                    if (current_value[1] == current_value[2] == current_value[3] == -1)
-                        d.index_to_variable[node.index] = (indx, cindx, 2)
-                    end
-                end
-            end
-        end
-        for (cindx,subexpress) in enumerate(d.subexpressions)
-            for (indx,node) in enumerate(subexpress.nd)
-                if (node.nodetype == JuMP._Derivatives.VARIABLE)
-                    current_value = d.index_to_variable[node.index]
-                    if (current_value[1] == current_value[2] == current_value[3] == -1)
-                        d.index_to_variable[node.index] = (indx, cindx, 3)
-                    end
-                end
-            end
-        end
-
-        d.subexpression_isnum = fill(true, (d.subexpression_number,))
-
-        return d #deepcopy(d)
-    end
+    return d
 end
 
 function parse_problem!(m::Optimizer)
@@ -501,6 +533,7 @@ function parse_problem!(m::Optimizer)
     m._variable_number = _variable_len
 
     ########### Set Correct Size for Problem Storage #########
+    m._current_xref = fill(0.0, _variable_len)
     m._lower_solution = fill(0.0, _variable_len)
     m._upper_solution = fill(0.0, _variable_len)
     m._lower_lvd = fill(0.0, _variable_len)
@@ -511,6 +544,11 @@ function parse_problem!(m::Optimizer)
 
     convert_to_min!(m)
     initialize_evaluators!(m, false)               # initializes the EAGO and JuMP NLP evaluators
+
+    new_time = time() - m._start_time
+    m._parse_time = new_time
+    m._run_time = new_time
+
     return
 end
 
@@ -591,44 +629,54 @@ function presolve_problem!(m::Optimizer)
     #m.presolve_flatten_flag && dag_flattening!(m)
 
     #m = user_reformed_optimizer(m)
-    #m.debug1 = initialize_evaluators!(m, true)                      # re-initializes evaluators after reformulations are performed
-
     create_initial_node!(m)                        # Create initial node and add it to the stack
-
-    #m.lower_variables = MOI.VariableIndex[MOI.VariableIndex(i) for i in 1:_variable_len]
-    #m.upper_variables = MOI.add_variables(m.initial_relaxed_optimizer, _variable_len)
-
-    ###### OBBT Setup #####
-    label_fixed_variables!(m)                                   # label variable fixed to a value
-    _nlpdata = m._nlp_data
-    _evaluator = _nlpdata.evaluator::MOI.AbstractNLPEvaluator
-    label_nonlinear_variables!(m, _evaluator)
-
+    label_fixed_variables!(m)
+    label_nonlinear_variables!(m)
+    label_quadratic_convexity!(m)
     check_disable_fbbt!(m)
-
     load_relaxed_problem!(m)
+
+    m._presolve_time = time() - m._parse_time
 
     return
 end
 
 function store_candidate_solution!(x::Optimizer)
-    flag = false
     if x._upper_feasibility
         if x._upper_objective_value < x._global_upper_bound
             x._feasible_solution_found = true
             x._first_solution_node = x._maximum_node_id
             x._solution_value = x._upper_objective_value
+            x._global_upper_bound = x._upper_objective_value
             @inbounds x._continuous_solution[:] = x._upper_solution
-            if x._optimization_sense == MOI.FEASIBILITY_SENSE
-                if ~x.feasible_local_continue || x.local_solve_only
-                    flag = true
-                end
-            end
         end
     end
-    return flag
+    return
 end
 
+function set_global_lower_bound!(x::Optimizer)
+    if ~isempty(x._stack)
+        min_node = minimum(x._stack)
+        lower_bound = min_node.lower_bound
+        x._global_lower_bound = lower_bound
+    end
+    return
+end
+
+# wraps subroutine call to isolate ExtensionType
+termination_check(x::Optimizer) = termination_check(x.ext_type, x)
+cut_condition(x::Optimizer) = cut_condition(x.ext_type, x)
+convergence_check(x::Optimizer) = convergence_check(x.ext_type, x)
+repeat_check(x::Optimizer) = repeat_check(x.ext_type, x)
+node_selection!(x::Optimizer) = node_selection!(x.ext_type, x)
+preprocess!(x::Optimizer) = preprocess!(x.ext_type, x)
+lower_problem!(x::Optimizer) = lower_problem!(x.ext_type, x)
+add_cut!(x::Optimizer) = add_cut!(x.ext_type, x)
+upper_problem!(x::Optimizer) = upper_problem!(x.ext_type, x)
+postprocess!(x::Optimizer) = postprocess!(x.ext_type, x)
+single_storage!(x::Optimizer) = single_storage!(x.ext_type, x)
+branch_node!(x::Optimizer) = branch_node!(x.ext_type, x)
+fathom!(x::Optimizer) = fathom!(x.ext_type, x)
 """
     global_solve!
 
@@ -636,21 +684,19 @@ Solves the branch and bound problem with the input EAGO optimizer object.
 """
 function global_solve!(x::Optimizer)
 
-    ext_type = x.ext_type
-
-    x._iteration_count = 0
+    x._iteration_count = 1
     x._node_count = 1
 
     # terminates when max nodes or iteration is reach, or when node stack is empty
-    while ~termination_check(ext_type, x)
+    while ~termination_check(x)
 
         # Selects node, deletes it from stack, prints based on verbosity
-        node_selection!(ext_type, x)
+        node_selection!(x)
         (x.verbosity >= 3) && print_node!(x)
 
         # Performs prepocessing and times
         x.log_on && (start_time = time())
-        preprocess!(ext_type, x)
+        preprocess!(x)
         if x.log_on
             x._last_preprocess_time = time() - start_time
         end
@@ -660,9 +706,9 @@ function global_solve!(x::Optimizer)
             # solves & times lower bounding problem
             x.log_on && (start_time = time())
             x._cut_iterations = 0
-            lower_problem!(ext_type, x)
-            while cut_condition(ext_type, x)
-                add_cut!(ext_type, x)
+            lower_problem!(x)
+            while cut_condition(x)
+                add_cut!(x)
             end
             if x.log_on
                 x._last_lower_problem_time = time() - start_time
@@ -672,78 +718,81 @@ function global_solve!(x::Optimizer)
 
             # checks for infeasibility stores solution
             if x._lower_feasibility
-
-                if ~convergence_check(ext_type, x)
+                if ~convergence_check(x)
 
                     x.log_on && (start_time = time())
-                    upper_problem!(ext_type, x)
+                    upper_problem!(x)
                     if x.log_on
                         x._last_upper_problem_time = time() - start_time
                     end
                     print_results!(x, false)
-                    store_candidate_solution!(x) && break
+                    store_candidate_solution!(x)
+                    if x._optimization_sense == MOI.FEASIBILITY_SENSE
+                        if ~x.feasible_local_continue || x.local_solve_only
+                            break
+                        end
+                    end
 
                     # Performs and times post processing
                     x.log_on && (start_time = time())
-                    postprocess!(ext_type, x)
+                    postprocess!(x)
                     if x.log_on
                         x._last_postprocessing_time = time() - start_time
                     end
 
                     # Checks to see if the node
                     if (x._postprocess_feasibility)
-                        if repeat_check(ext_type, x)
-                            single_storage!(ext_type, x)
+                        if repeat_check(x)
+                            single_storage!(x)
                         else
-                            branch_node!(ext_type, x)
+                            branch_node!(x)
                         end
                     end
                 end
             end
-            fathom!(ext_type, x)
+            fathom!(x)
         else
             x._lower_objective_value = -Inf
             x._lower_feasibility = false
             x._upper_feasibility = false
         end
+        set_global_lower_bound!(x)
         x._run_time = time() - x._start_time
-        x._iteration_count += 1
+        x._time_left = x.time_limit - x._run_time
         log_iteration!(x)
         print_iteration!(x)
+        x._iteration_count += 1
     end
 
     x._objective_value = x._global_upper_bound
 
     # Prints the solution
     print_solution!(x)
+    return
+end
+
+function throw_optimize_hook!(m::Optimizer)
+    optimize_hook!(m.ext_type, m)
 end
 
 function MOI.optimize!(m::Optimizer)
 
     m._start_time = time()
     parse_problem!(m)
-    if m.log_on
-        m._log[:parse_time] = time() - start_time
-        m._log[:total_time] = m._log[:parse_time]
-    end
-
     presolve_problem!(m)
-    if m.log_on
-        m._log[:presolve_time] = time() - m._log[:parse_time]
-    end
-
-    # Allow for a hook to modify branch and bound routine
-    if m.enable_optimize_hook
-        return optimize_hook(m.ext_type, m)
-    end
 
     # Runs the branch and bound routine
-    if is_lp(m)
-        linear_solve!(m)
-    elseif m.local_solve_only
-        local_solve!(m)
+    if ~m.enable_optimize_hook
+        if is_lp(m)
+            linear_solve!(m)
+        elseif m.local_solve_only
+            local_solve!(m)
+        else
+            global_solve!(m)
+        end
     else
-        global_solve!(m)
+        throw_optimize_hook!(m)
     end
+
     return
 end

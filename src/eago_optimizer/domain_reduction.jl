@@ -5,7 +5,7 @@ Tightens the bounds of the `_current_node` using the current global upper bound
 and the duality information obtained from the relaxation.
 """
 function variable_dbbt!(x::NodeBB, mult_lo::Vector{Float64}, mult_hi::Vector{Float64},
-                        LBD::Float64, UBD::Float64, nx::Int)
+                        LBD::Float64, UBD::Float64, nx::Int64)
 
     cut = 0.0
     vb = 0.0
@@ -37,34 +37,47 @@ end
 
 Excludes OBBT on variable indices that are tight for the solution of the relaxation.
 """
-function trival_filtering!(x::Optimizer, y::NodeBB,
-                           obbt_working_lower_index::Vector{Int64},
-                           obbt_working_upper_index::Vector{Int64})
+function trivial_filtering!(x::Optimizer, y::NodeBB)
 
-    termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
-    result_status_code = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
-    valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
+    x._preprocess_termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
+    x._preprocess_result_status = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
+    valid_flag, feasible_flag = is_globally_optimal(x._preprocess_termination_status,
+                                                    x._preprocess_result_status)
 
     if valid_flag
         if feasible_flag
-            low_delete = Int64[]
-            upp_delete = Int64[]
-            for i in obbt_working_lower_index
-                @inbounds vi = x._lower_variable_index[i]
-                diff = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), vi)
-                @inbounds diff -= y.lower_variable_bounds[i]
-                (abs(diff) <= x.obbt_tolerance) && push!(low_delete, i)
+            for j in 1:length(x._obbt_working_lower_index)
+                @inbounds active_flag = x._obbt_working_lower_index[j]
+                if active_flag
+                    @inbounds vi = x._lower_variable_index[j]
+                    diff = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), vi)
+                    @inbounds diff -= y.lower_variable_bounds[j]
+                    if (abs(diff) <= x.obbt_tolerance)
+                        @inbounds x._obbt_working_lower_index[j] = false
+                    end
+                end
             end
-            for i in obbt_working_upper_index
-                @inbounds vi = x._lower_variable_index[i]
-                diff = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), vi)
-                diff *= -1.0
-                @inbounds diff += y.upper_variable_bounds[i]
-                (abs(diff) <= x.obbt_tolerance) && push!(upp_delete, i)
+            for j in 1:length(x._obbt_working_upper_index)
+                @inbounds active_flag = x._obbt_working_upper_index[j]
+                if active_flag
+                    @inbounds vi = x._lower_variable_index[j]
+                    diff = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), vi)
+                    diff *= -1.0
+                    @inbounds diff += y.upper_variable_bounds[j]
+                    if (abs(diff) <= x.obbt_tolerance)
+                        @inbounds x._obbt_working_upper_index[j] = false
+                    end
+                end
             end
-            deleteat!(obbt_working_lower_index, low_delete)
-            deleteat!(obbt_working_upper_index, upp_delete)
         end
+    end
+    return
+end
+
+
+function bool_indx_diff(z::Vector{Bool},x::Vector{Bool}, y::Vector{Bool})
+    for i = 1:length(z)
+        @inbounds z[i] = (x[i] & ~y[i])
     end
     return
 end
@@ -74,66 +87,69 @@ end
 
 Excludes OBBT on variable indices after a search in a filtering direction.
 """
-function aggressive_filtering!(x::Optimizer, y::NodeBB,
-                               obbt_working_lower_index::Vector{Int64},
-                               obbt_working_upper_index::Vector{Int64})
+function aggressive_filtering!(x::Optimizer, y::NodeBB)
 
     # Initial filtering vector (negative one direction per remark in Gleixner2017)
     variable_number = x._variable_number
     v = -ones(variable_number)
 
     # Copy prior index set (ignores linear and binary terms)
-    old_low_index = copy(obbt_working_lower_index)
-    old_upp_index = copy(obbt_working_upper_index)
-    new_low_index = copy(obbt_working_lower_index)
-    new_upp_index = copy(obbt_working_upper_index)
+    obbt_var_len = length(x.obbt_variable_values)
+    copyto!(x._old_low_index, x._obbt_working_lower_index)
+    copyto!(x._old_upp_index, x._obbt_working_upper_index)
+    copyto!(x._new_low_index, x._obbt_working_lower_index)
+    copyto!(x._new_upp_index, x._obbt_working_upper_index)
 
     # Exclude unbounded directions
-    low_delete = Int64[]
-    upp_delete = Int64[]
-    for i in new_low_index
-        @inbounds bnd = y.lower_variable_bounds[i]
-        if ~(bnd == -Inf)
-            push!(low_delete, i)
+    for i in 1:obbt_var_len
+        @inbounds active_flag = x._new_low_index[i]
+        if active_flag
+            @inbounds bnd = y.lower_variable_bounds[i]
+            if (bnd == -Inf)
+                @inbounds x._new_low_index[i] = false
+            end
         end
     end
-    for i in new_upp_index
-        @inbounds bnd = y.upper_variable_bounds[i]
-        if ~(bnd == Inf)
-            push!(upp_delete, i)
+    for i in 1:obbt_var_len
+        @inbounds active_flag = x._new_low_index[i]
+        if active_flag
+            @inbounds bnd = y.upper_variable_bounds[i]
+            if bnd == Inf
+                @inbounds x._new_low_index[i] = false
+            end
         end
     end
-    deleteat!(new_low_index, low_delete)
-    deleteat!(new_upp_index, upp_delete)
-    empty!(low_delete)
-    empty!(upp_delete)
 
     # Begin the main algorithm
     for k in 1:x.obbt_aggressive_max_iteration
 
         # Set index differences and vector for filtering direction
-        lower_indx_diff = setdiff(old_low_index, new_low_index)
-        upper_indx_diff = setdiff(old_upp_index, new_upp_index)
-        low_delete = Int64[]
-        upp_delete = Int64[]
+        bool_indx_diff!(x._lower_indx_diff, x._old_low_index, x._new_low_index)
+        bool_indx_diff!(x._upper_indx_diff, x._old_upp_index, x._new_upp_index)
 
-        for i in lower_indx_diff
-            @inbounds bnd = v[i]
-            if bnd < 0.0
-                @inbounds v[i] = 0.0
+        for i in 1:obbt_var_len
+            @inbounds active_flag = x._lower_indx_diff[i]
+            if active_flag
+                @inbounds bnd = v[i]
+                if bnd < 0.0
+                    @inbounds v[i] = 0.0
+                end
             end
         end
-        for i in upper_indx_diff
-            @inbounds bnd = v[i]
-            if (bnd > 0.0)
-                @inbounds v[i] = 0.0
+        for i in 1:obbt_var_len
+            @inbounds active_flag = x._upper_indx_diff[i]
+            if active_flag
+                @inbounds bnd = v[i]
+                if (bnd > 0.0)
+                    @inbounds v[i] = 0.0
+                end
             end
         end
 
         # Termination Condition
-        ((isempty(new_low_index) & isempty(new_upp_index)) || (iszero(v))) && break
+        ((~any(x._new_low_index) & ~any(x._new_upp_index)) || (iszero(v))) && break
         if (k >= 2)
-            if (length(lower_indx_diff) + length(upper_indx_diff)) < x.obbt_aggressive_min_dimension
+            if (count(x._lower_indx_diff) + count(x._upper_indx_diff)) < x.obbt_aggressive_min_dimension
                 break
             end
         end
@@ -146,32 +162,43 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB,
         # Optimizes the problem and if successful filter additional bounds
         MOI.optimize!(x.relaxed_optimizer)
 
-        termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
-        result_status_code = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
-        valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
+        x._preprocess_termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
+        x._preprocess_result_status = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
+        valid_flag, feasible_flag = is_globally_optimal(x._preprocess_termination_status,
+                                                        x._preprocess_result_status)
 
         if valid_flag
             if feasible_flag
                 variable_primal = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), x._lower_variable_index)
-                new_low_index = copy(old_low_index)
-                new_upp_index = copy(old_upp_index)
-                for i in old_low_index
-                    @inbounds chk = (variable_primal[i] == y.lower_variable_bounds[i])
-                    chk && push!(low_delete, i)
+                copyto!(x._new_low_index, x._old_low_index)
+                copyto!(x._new_upp_index, x._old_upp_index)
+                for i in 1:obbt_var_len
+                    @inbounds active_flag = x._old_low_index[i]
+                    if active_flag
+                        @inbounds vp = variable_primal[i]
+                        @inbounds xL = y.lower_variable_bounds[i]
+                        if (vp == xL)
+                            @inbounds x._new_low_index[i] = false
+                        end
+                    end
                 end
-                for i in old_upp_index
-                    @inbounds (variable_primal[i] == y.upper_variable_bounds[i])
-                    chk && push!(upp_delete, i)
+                for i in 1:obbt_var_len
+                    @inbounds active_flag = x._old_upp_index[i]
+                    if active_flag
+                        @inbounds vp = variable_primal[i]
+                        @inbounds xU = y.upper_variable_bounds[i]
+                        if (vp == xU)
+                            @inbounds x._new_upp_index[i] = false
+                        end
+                    end
                 end
-                deleteat!(new_low_index, low_delete)
-                deleteat!(new_upp_index, upp_delete)
             end
         else
             return false
         end
     end
-    obbt_working_lower_index = new_low_index
-    obbt_working_upper_index = new_upp_index
+    copyto!(x._obbt_working_lower_index, x._new_low_index)
+    copyto!(x._obbt_working_upper_index, x._new_upp_index)
     return true
 end
 aggressive_obbt_on_heurestic(x::Optimizer) = x.obbt_aggressive_on
@@ -186,85 +213,77 @@ function obbt(x::Optimizer)
     feasibility = true
 
     y = x._current_node
-    ymid = mid(y)
+    ymid = @. 0.5*(y.upper_variable_bounds + y.lower_variable_bounds)
+    x._current_xref = ymid
 
     # solve initial problem to feasibility
-    update_relaxed_problem_box!(x)
-    relax_problem!(t, x, ymid)
-    relax_objective!(t, x, ymid)
+    update_relaxed_problem_box!(x, y)
+    relax_problem!(x, ymid)
+    relax_objective!(x, ymid)
     objective_cut_linear!(x)
     MOI.set(x.relaxed_optimizer, MOI.ObjectiveSense(), MOI.FEASIBILITY_SENSE)
     MOI.optimize!(x.relaxed_optimizer)
 
     # Sets indices to attempt OBBT on
-    obbt_variables = x._lower_variable_values
-    obbt_working_lower_index = Int64[]
-    obbt_working_upper_index = Int64[]
-    append!(obbt_working_lower_index, obbt_variables)
-    append!(obbt_working_upper_index, obbt_variables)
+    obbt_variables = x.obbt_variable_values
+    copyto!(x._obbt_working_lower_index, obbt_variables)
+    copyto!(x._obbt_working_upper_index, obbt_variables)
 
     # Prefiltering steps && and sets initial LP values
-    trival_filtering!(x, y, obbt_working_lower_index,
-                            obbt_working_upper_index)
-
+    trivial_filtering!(x, y)
     if aggressive_obbt_on_heurestic(x)
-        feasibility = aggressive_filtering!(x, y, obbt_working_lower_index,
-                                                  obbt_working_upper_index)
+        feasibility = aggressive_filtering!(x, y)
     end
     xLP = MOI.get(x.relaxed_optimizer, MOI.VariablePrimal(), x._lower_variable_index)
 
-    while ~(isempty(obbt_working_lower_index) && isempty(obbt_working_upper_index)) && ~isempty(y)
+    while any(x._obbt_working_lower_index) & any(x._obbt_working_upper_index) & ~isempty(y)
 
         # Get lower value
-        lower_indx = 0
-        upper_indx = 0
-        if (isempty(obbt_working_lower_index))
-            lower_value = Inf
-        else
-            @inbounds find_indx = obbt_working_lower_index[1]
-            @inbounds lower_value = xLP[find_indx]
-            @inbounds lower_value -= y.lower_variable_bounds[find_indx]
-            lower_indx = 1
-            for i in 2:length(obbt_working_lower_index)
-                @inbounds find_indx = obbt_working_lower_index[i]
-                @inbounds temp_value = xLP[find_indx]
-                @inbounds temp_value -= y.lower_variable_bounds[find_indx]
-                if temp_value < lower_value
-                    lower_value = temp_value
-                    lower_indx = i
+        lower_indx = -1
+        upper_indx = -1
+        lower_value = Inf
+        upper_value = Inf
+
+        # min of xLP - yL on active
+        if any(x._obbt_working_lower_index)
+            for i in 1:length(x._obbt_working_lower_index)
+                @inbounds active_flag = x._obbt_working_lower_index[i]
+                if active_flag
+                    @inbounds temp_value = xLP[i]
+                    @inbounds temp_value -= y.lower_variable_bounds[i]
+                    if temp_value < lower_value
+                        lower_value = temp_value
+                        lower_indx = i
+                    end
                 end
             end
         end
-        if (isempty(obbt_working_upper_index))
-            upper_value = Inf
-        else
-            @inbounds find_indx = obbt_working_upper_index[1]
-            @inbounds upper_value = y.upper_variable_bounds[find_indx]
-            @inbounds upper_value -= xLP[find_indx]
-            upper_indx = 1
-            for i in 2:length(obbt_working_upper_index)
-                @inbounds find_indx = obbt_working_upper_index[i]
-                @inbounds temp_value = y.upper_variable_bounds[find_indx]
-                @inbounds temp_value -= xLP[find_indx]
-                if temp_value < upper_value
-                    upper_value = temp_value
-                    upper_indx = i
+        # min of yU - xLP on active
+        if any(x._obbt_working_upper_index)
+            for i in 1:length(x._obbt_working_upper_index)
+                @inbounds active_flag = x._obbt_working_upper_index[i]
+                if active_flag
+                    @inbounds temp_value = y.upper_variable_bounds[i]
+                    @inbounds temp_value -= xLP[i]
+                    if temp_value < upper_value
+                        upper_value = temp_value
+                        upper_indx = i
+                    end
                 end
             end
         end
 
         if (lower_value <= upper_value)
 
-            deleteat!(obbt_working_lower_index, lower_indx)
-
-            # set objectives
+            @inbounds x._obbt_working_lower_index[lower_indx] = false
             @inbounds var = x._lower_variable[lower_indx]
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveFunction{SV}(), var)
             MOI.optimize!(x.relaxed_optimizer)
-            termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
-            result_status_code = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
-            valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
+            x._preprocess_termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
+            x._preprocess_result_status = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
+            valid_flag, feasible_flag = is_globally_optimal(x._preprocess_termination_status,
+                                                            x._preprocess_result_status)
 
             if valid_flag
                 if feasible_flag
@@ -284,19 +303,17 @@ function obbt(x::Optimizer)
             else
                 break
             end
-
         else
 
-            # Get index
-            deleteat!(obbt_working_upper_index, upper_indx)
-
+            x._obbt_working_upper_index[upper_indx] = false
             @inbounds var = x._lower_variable[upper_indx]
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveSense(), MOI.MAX_SENSE)
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveFunction{SV}(), var)
             MOI.optimize!(x.relaxed_optimizer)
-            termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
-            result_status_code = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
-            valid_flag, feasible_flag = is_globally_optimal(termination_status, result_status_code)
+            x._preprocess_termination_status = MOI.get(x.relaxed_optimizer, MOI.TerminationStatus())
+            x._preprocess_result_status = MOI.get(x.relaxed_optimizer, MOI.PrimalStatus())
+            valid_flag, feasible_flag = is_globally_optimal(x._preprocess_termination_status,
+                                                            x._preprocess_result_status)
 
             if valid_flag
                 if feasible_flag
@@ -317,11 +334,8 @@ function obbt(x::Optimizer)
                 break
             end
         end
-        #GenerateLVB!(x)
-        trival_filtering!(x, y, obbt_working_lower_index,
-                                obbt_working_upper_index)
+        trivial_filtering!(x, y)
     end
-
     return feasibility
 end
 
@@ -332,130 +346,195 @@ Performs the linear bound tightening.
 """
 function lp_bound_tighten(m::Optimizer)
 
+    feas = true
     n = m._current_node
     lvb = n.lower_variable_bounds
     uvb = n.upper_variable_bounds
 
-    # Runs Poor Man LP on constraints of form ax >= b
-    for (func, constr, ind) in m._linear_geq_constraints
-        temp_value = (constr.lower - func.constant)
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            temp_value += -max(coeff*ui, coeff*li)
-        end
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            term_value = -max(coeff*ui, coeff*li)
-            cut_value = (temp_value - term_value)/coeff
-            if (coeff > 0.0)
-                if (li < cut_value)
-                    (cut_value > ui) && (return false)
-                    @inbounds n.lower_variable_bounds[vi] = cut_value
+    for i in 1:m.lp_reptitions
+
+        # Runs Poor Man LP on constraints of form ax >= b
+        for (func, constr, ind) in m._linear_geq_constraints
+            if feas
+                temp_value = -(constr.lower - func.constant)
+                for term in func.terms
+                    indx = term.variable_index.value
+                    coeff = term.coefficient
+                    @inbounds li = lvb[indx]
+                    @inbounds ui = uvb[indx]
+                    temp_value += max(coeff*ui, coeff*li)
+                end
+                for term in func.terms
+                    if feas
+                        indx = term.variable_index.value
+                        coeff = term.coefficient
+                        @inbounds li = lvb[indx]
+                        @inbounds ui = uvb[indx]
+                        term_value = max(coeff*ui, coeff*li)
+                        cut_value = -(temp_value - term_value)/coeff
+                        if (-coeff > 0.0)
+                            if (li < cut_value)
+                                if (cut_value < ui)
+                                    @inbounds uvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        else
+                            if (ui > cut_value)
+                                if (cut_value > li)
+                                    @inbounds lvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        end
+                    end
                 end
             else
-                if (ui > cut_value)
-                    (cut_value < li) && (return false)
-                    @inbounds n.upper_variable_bounds[indx] = cut_value
-                end
+                break
             end
         end
+
+        # Runs Poor Man LP on constraints of form ax <= b
+        for (func, constr, ind) in m._linear_leq_constraints
+            if feas
+                temp_value = (constr.upper - func.constant)
+                for term in func.terms
+                    indx = term.variable_index.value
+                    coeff = term.coefficient
+                    @inbounds li = lvb[indx]
+                    @inbounds ui = uvb[indx]
+                    temp_value -= min(coeff*ui, coeff*li)
+                end
+                for term in func.terms
+                    if feas
+                        indx = term.variable_index.value
+                        coeff = term.coefficient
+                        @inbounds li = lvb[indx]
+                        @inbounds ui = uvb[indx]
+                        term_value = min(coeff*ui, coeff*li)
+                        cut_value = (temp_value + term_value)/coeff
+                        if (coeff > 0.0)
+                            if (li < cut_value)
+                                if (cut_value < ui)
+                                    @inbounds uvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        else
+                            if (ui > cut_value)
+                                if (cut_value > li)
+                                    @inbounds lvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        end
+                    end
+                end
+            else
+                break
+            end
+        end
+
+        for (func, constr, ind) in m._linear_eq_constraints
+            if feas
+                temp_value = (constr.value - func.constant)
+                for term in func.terms
+                    indx = term.variable_index.value
+                    coeff = term.coefficient
+                    @inbounds li = lvb[indx]
+                    @inbounds ui = uvb[indx]
+                    temp_value -= min(coeff*ui, coeff*li)
+                end
+                for term in func.terms
+                    if feas
+                        indx = term.variable_index.value
+                        coeff = term.coefficient
+                        @inbounds li = lvb[indx]
+                        @inbounds ui = uvb[indx]
+                        term_value = min(coeff*ui, coeff*li)
+                        cut_value = (temp_value + term_value)/coeff
+                        if (coeff > 0.0)
+                            if (li < cut_value)
+                                if (cut_value < ui)
+                                    @inbounds uvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        else
+                            if (ui > cut_value)
+                                if (cut_value > li)
+                                    @inbounds lvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        end
+                    end
+                end
+            else
+                break
+            end
+
+            if feas
+                temp_value = -(constr.value - func.constant)
+                for term in func.terms
+                    indx = term.variable_index.value
+                    coeff = term.coefficient
+                    @inbounds li = lvb[indx]
+                    @inbounds ui = uvb[indx]
+                    temp_value += max(coeff*ui, coeff*li)
+                end
+                for term in func.terms
+                    if feas
+                        indx = term.variable_index.value
+                        coeff = term.coefficient
+                        @inbounds li = lvb[indx]
+                        @inbounds ui = uvb[indx]
+                        term_value = max(coeff*ui, coeff*li)
+                        cut_value = -(temp_value - term_value)/coeff
+                        if (-coeff > 0.0)
+                            if (li < cut_value)
+                                if (cut_value < ui)
+                                    @inbounds uvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        else
+                            if (ui > cut_value)
+                                if (cut_value > li)
+                                    @inbounds lvb[indx] = cut_value
+                                end
+                            else
+                                feas = false
+                                break
+                            end
+                        end
+                    end
+                end
+            else
+                break
+            end
+        end
+
+        (~feas) && (break)
     end
 
-    # Runs Poor Man LP on constraints of form ax <= b
-    for (func, constr, ind) in m.linear_leq_constraints
-        temp_value = (constr.upper - func.constant)
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            temp_value += -min(coeff*ui, coeff*li)
-        end
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            term_value = -min(coeff*ui, coeff*li)
-            cut_value = (temp_value - term_value)/coeff
-            if (term.coefficient < 0.0 )
-                if (li < cut_value)
-                    (cut_value > ui) && (return false)
-                    @inbounds n.lower_variable_bounds[vi] = cut_value
-                end
-            else
-                if (ui > cut_value)
-                    (cut_value < li) && (return false)
-                    @inbounds n.upper_variable_bounds[vi] = cut_value
-                end
-            end
-        end
-    end
+    m._current_node = NodeBB(lvb, uvb, n.lower_bound, n.upper_bound, n.depth, n.id)
 
-    for (func, constr, ind) in m.linear_eq_constraints
-        temp_value = (constr.value - func.constant)
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            temp_value += -max(coeff*ui, coeff*li)
-        end
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            term_value = -max(coeff*ui, coeff*li)
-            cut_value = (temp_value - term_value)/coeff
-            if (coeff > 0.0 )
-                if (li < cut_value)
-                    (cut_value > ui) && (return false)
-                    @inbounds n.lower_variable_bounds[vi] = cut_value
-                end
-            else
-                if (ui > cut_value)
-                    (cut_value < li) && (return false)
-                    @inbounds n.upper_variable_bounds[vi] = cut_value
-                end
-            end
-        end
-        temp_value = (constr.value - func.constant)
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            TempValue += -min(coeff*ui, coeff*li)
-        end
-        for term in func.terms
-            indx = term.variable_index.value
-            coeff = term.coefficient
-            @inbounds li = lvb[indx]
-            @inbounds ui = uvb[indx]
-            term_value = -min(coeff*ui, coeff*li)
-            cut_value = (temp_value - term_value)/coeff
-            if (coeff < 0.0 )
-                if (li < cut_value)
-                    (cut_value > ui) && (return false)
-                    @inbounds n.lower_variable_bounds[vi] = cut_value
-                end
-            else
-                if (ui > cut_value)
-                    (cut_value < li) && (return false)
-                    @inbounds n.upper_variable_bounds[vi] = cut_value
-                end
-            end
-        end
-    end
-
-    return true
+    return feas
 end
 
 function check_univariate_quad(f::MOI.ScalarQuadraticFunction{Float64})
@@ -468,7 +547,7 @@ get_value(set::MOI.LessThan{Float64}) = set.upper
 get_value(set::MOI.GreaterThan{Float64}) = set.lower
 get_value(set::MOI.EqualTo{Float64}) = set.value
 
-function get_univariate_coeff(func::MOI.ScalarQuadraticFunction{Float64},set::T) where {T<:MOI.AbstractScalarSet}
+function get_univariate_coeff(func::MOI.ScalarQuadraticFunction{Float64}, set::T) where {T<:MOI.AbstractScalarSet}
     a = func.quadratic_terms[1].coefficient
     b = (length(func.affine_terms) > 0) ?  func.affine_terms[1].coefficient : 0.0
     c = get_value(set) - func.constant
@@ -595,10 +674,11 @@ function classify_quadratics!(m::Optimizer)
 end
 
 function univariate_kernel(n::NodeBB,a::Float64,b::Float64,c::Float64,vi::Int)
+        flag = true
         term1 = c + (b^2)/(4.0*a)
         term2 = term1/a
         if ((term1 > 0.0) && (a < 0.0)) # No solution, fathom node
-            return false
+            flag = false
         elseif (term2 >= 0.0)
             xlo = n.lower_variable_bounds[vi]
             xhi = n.upper_variable_bounds[vi]
@@ -612,31 +692,40 @@ function univariate_kernel(n::NodeBB,a::Float64,b::Float64,c::Float64,vi::Int)
                 n.upper_variable_bounds[vi] = min(xhi,chk2)
             end
             if (n.lower_variable_bounds[vi] <= n.upper_variable_bounds[vi])
-                return true
+                flag = true
             end
         else
-            return true
+            flag = true
         end
+        return flag
 end
 
 function univariate_quadratic(m::Optimizer)
     feas = true
     # fathom ax^2 + bx + c > l quadratics
-    for (a,b,c,vi) in m._univariate_quadratic_geq_constraints
-        feas = univariate_kernel(n,a,b,c,vi)
-        (feas == false) && return feas
+    for (a, b, c, vi) in m._univariate_quadratic_geq_constraints
+        if ~feas
+            break
+        end
+        feas = univariate_kernel(n, a, b, c , vi)
     end
     # fathom ax^2 + bx + c < u quadratics
-    for (a,b,c,vi) in m._univariate_quadratic_leq_constraints
-         feas = univariate_kernel(n,-a,-b,-c,vi)
-         (feas == false) && return feas
+    for (a, b, c, vi) in m._univariate_quadratic_leq_constraints
+        if ~feas
+            break
+        end
+        feas = univariate_kernel(n, -a, -b, -c, vi)
     end
     # fathom ax^2 + bx + c = v quadratics
-    for (a,b,c,vi) in m._univariate_quadratic_eq_constraints
-          feas = univariate_kernel(n,a,b,c,vi)
-          (feas == false) && return feas
-          feas = univariate_kernel(n,-a,-b,-c,vi)
-          (feas == false) && return feas
+    for (a, b, c, vi) in m._univariate_quadratic_eq_constraints
+        if ~feas
+            break
+        end
+        feas = univariate_kernel(n, a, b, c, vi)
+        if ~feas
+            break
+        end
+        feas = univariate_kernel(n, -a, -b, -c, vi)
      end
      return feas
 end
@@ -665,7 +754,7 @@ part of constraint propagation.
 function cpwalk(x::Optimizer)
 
     n = x._current_node
-    evaluator = x.working_evaluator_block.evaluator
+    evaluator = x._relaxed_evaluator
 
     # runs at midpoint bound
     midx = (n.upper_variable_bounds + n.lower_variable_bounds)/2.0
