@@ -82,6 +82,7 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
     # Options for optimality-based bound tightening
     relaxed_optimizer::S
+    relaxed_inplace_mod::Bool
     obbt_depth::Int64
     obbt_reptitions::Int64
     obbt_aggressive_on::Bool
@@ -106,7 +107,7 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
     # Tolerance to add cuts and max number of cuts
     cut_max_iterations::Int64
-    cut_offset::Float64
+    cut_cvx::Float64
     cut_tolerance::Float64
 
     # Upper bounding options
@@ -199,6 +200,12 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
     _lower_lvd::Vector{Float64}
     _lower_uvd::Vector{Float64}
 
+    _cut_result_status::MOI.ResultStatusCode
+    _cut_termination_status::MOI.TerminationStatusCode
+    _cut_solution::Vector{Float64}
+    _cut_objective_value::Float64
+    _cut_feasibility::Bool
+
     _upper_result_status::MOI.ResultStatusCode
     _upper_termination_status::MOI.TerminationStatusCode
     _upper_feasibility::Bool
@@ -227,9 +234,9 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
     _objective_convexity::Bool
 
-    _objective_cut_set::Bool
+    _objective_cut_set::Int64
     _objective_cut_ci_sv::CI{SV,LT}
-    _objective_cut_ci_saf::CI{SAF,LT}
+    _objective_cut_ci_saf::Vector{CI{SAF,LT}}
 
     _linear_leq_constraints::Vector{Tuple{SAF, LT, Int64}}
     _linear_geq_constraints::Vector{Tuple{SAF, GT, Int64}}
@@ -243,9 +250,9 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
     _quadratic_geq_dict::Vector{ImmutableDict{Int64,Int64}}
     _quadratic_eq_dict::Vector{ImmutableDict{Int64,Int64}}
 
-    _quadratic_ci_leq::Vector{CI{SAF,LT}}
-    _quadratic_ci_geq::Vector{CI{SAF,LT}}
-    _quadratic_ci_eq::Vector{Tuple{CI{SAF,LT},CI{SAF,LT}}}
+    _quadratic_ci_leq::Vector{Vector{CI{SAF,LT}}}
+    _quadratic_ci_geq::Vector{Vector{CI{SAF,LT}}}
+    _quadratic_ci_eq::Vector{Vector{Tuple{CI{SAF,LT},CI{SAF,LT}}}}
 
     _quadratic_leq_sparsity::Vector{Vector{VI}}
     _quadratic_geq_sparsity::Vector{Vector{VI}}
@@ -260,8 +267,8 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
     _quadratic_eq_convexity_1::Vector{Bool}
     _quadratic_eq_convexity_2::Vector{Bool}
 
-    _lower_nlp_affine::Vector{CI{SAF,LT}}
-    _upper_nlp_affine::Vector{CI{SAF,LT}}
+    _lower_nlp_affine::Vector{Vector{CI{SAF,LT}}}
+    _upper_nlp_affine::Vector{Vector{CI{SAF,LT}}}
 
     _lower_nlp_affine_indx::Vector{Int64}
     _upper_nlp_affine_indx::Vector{Int64}
@@ -329,6 +336,16 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
         m = new()
 
+        # checks that all keywords supplied to the optimizers are field names
+        # throws error otherwise
+        allowed_kwargs = fieldnames(Optimizer{S,T})
+        disallowed_kwargs = setdiff(collect(keys(options)), allowed_kwargs)
+        if ~isempty(disallowed_kwargs)
+            error("The following keyword arguments are not recognized by the
+                   EAGO optimizer: $(disallowed_kwargs). Please consult
+                   the documentation for allowed arguments.")
+        end
+
         default_opt_dict = Dict{Symbol,Any}()
 
         # Presolving options
@@ -356,7 +373,7 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
         # Options for linear bound tightening
         default_opt_dict[:lp_depth] = 0
-        default_opt_dict[:lp_reptitions] = 1
+        default_opt_dict[:lp_reptitions] = 3
 
         # Options for quadratic bound tightening
         default_opt_dict[:quad_uni_depth] = 0
@@ -370,9 +387,9 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
 
         # Tolerance to add cuts and max number of cuts
         default_opt_dict[:objective_cut_on] = true
-        default_opt_dict[:cut_max_iterations] = 0
-        default_opt_dict[:cut_offset] = 0.1
-        default_opt_dict[:cut_tolerance] = 0.1
+        default_opt_dict[:cut_max_iterations] = 2
+        default_opt_dict[:cut_cvx] = 0.9
+        default_opt_dict[:cut_tolerance] = 0.05
 
         # Upper bounding options
         default_opt_dict[:upper_bounding_depth] = 10
@@ -394,7 +411,7 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         # Termination limits
         default_opt_dict[:node_limit] = 10^6
         default_opt_dict[:time_limit] = 3600.0
-        default_opt_dict[:iteration_limit] = 3
+        default_opt_dict[:iteration_limit] = 3000000
         default_opt_dict[:absolute_tolerance] = 1E-3
         default_opt_dict[:relative_tolerance] = 1E-3
         default_opt_dict[:local_solve_only] = false
@@ -416,13 +433,21 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         default_opt_dict[:ext_type] = DefaultExt()
 
         default_opt_dict[:relaxed_optimizer] = GLPK.Optimizer()
+        default_opt_dict[:relaxed_inplace_mod] = true
         default_opt_dict[:upper_optimizer] = Ipopt.Optimizer()
         #=
         fac = with_optimizer(Ipopt.Optimizer, max_iter = 1000, acceptable_tol = 1E30,
                              acceptable_iter = 100, constr_viol_tol = 0.00001,
                              acceptable_constr_viol_tol = 1E-6, print_level = 0)
         =#
-        fac = with_optimizer(Ipopt.Optimizer, print_level = 0)
+        fac = with_optimizer(Ipopt.Optimizer, print_level = 0,
+                             acceptable_tol = 1E30,
+                             max_iter = 1000,
+                             acceptable_iter = 50,
+                             constr_viol_tol = 0.0001,
+                             acceptable_constr_viol_tol = 0.0001,
+                             acceptable_dual_inf_tol = 1.0,
+                             acceptable_compl_inf_tol = 0.0001)
         default_opt_dict[:upper_factory] = fac
 
         for i in keys(default_opt_dict)
@@ -477,6 +502,12 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         m._lower_lvd = Float64[]
         m._lower_uvd = Float64[]
 
+        m._cut_result_status = MOI.OTHER_RESULT_STATUS
+        m._cut_termination_status = MOI.OPTIMIZE_NOT_CALLED
+        m._cut_solution = Float64[]
+        m._cut_objective_value = -Inf
+        m._cut_feasibility = false
+
         m._upper_result_status = MOI.OTHER_RESULT_STATUS
         m._upper_termination_status = MOI.OPTIMIZE_NOT_CALLED
         m._upper_feasibility = false
@@ -502,9 +533,9 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         m._objective_is_saf = false
         m._objective_is_sqf = false
         m._objective_is_nlp = false
-        m._objective_cut_set = false
-        m._objective_cut_ci_sv = CI{SV,LT}(1)
-        m._objective_cut_ci_saf = CI{SAF,LT}(1)
+        m._objective_cut_set = -1
+        m._objective_cut_ci_sv = CI{SV,LT}(-1.0)
+        m._objective_cut_ci_saf = CI{SAF,LT}[]
 
         m._objective_convexity = false
 
@@ -538,9 +569,8 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         m._quadratic_eq_convexity_2 = Bool[]
 
 
-        m._lower_nlp_affine = CI{SAF,LT}[]
-        m._upper_nlp_affine = CI{SAF,LT}[]
-
+        m._lower_nlp_affine = Vector{CI{SAF,LT}}[]
+        m._upper_nlp_affine = Vector{CI{SAF,LT}}[]
 
         m._lower_nlp_affine_indx = Int64[]
         m._upper_nlp_affine_indx = Int64[]
@@ -601,7 +631,11 @@ mutable struct Optimizer{S<:MOI.AbstractOptimizer, T<:MOI.AbstractOptimizer} <: 
         return m
     end
 end
-Optimizer(;options...) = Optimizer{GLPK.Optimizer, Ipopt.Optimizer}(;options...)
+function Optimizer(;options...)
+    rtype = haskey(options, :relaxed_optimizer) ? typeof(options[:relaxed_optimizer]) : GLPK.Optimizer
+    utype = haskey(options, :upper_optimizer) ? typeof(options[:upper_optimizer]) : Ipopt.Optimizer
+    Optimizer{rtype, utype}(;options...)
+end
 
 function MOI.empty!(m::Optimizer)
     m = Optimizer()
@@ -754,10 +788,23 @@ function MOI.get(m::Optimizer, ::MOI.ObjectiveValue)
     return mult*m._objective_value
 end
 MOI.get(m::Optimizer, ::MOI.NumberOfVariables) = m._variable_number
-MOI.get(m::Optimizer, ::MOI.ObjectiveBound) = m._global_upper_bound
+function MOI.get(m::Optimizer, ::MOI.ObjectiveBound)
+    if m._optimization_sense === MOI.MAX_SENSE
+        bound = -m._global_lower_bound
+    else
+        bound = m._global_upper_bound
+    end
+    return bound
+end
 function MOI.get(m::Optimizer, ::MOI.RelativeGap)
+    LBD = m._global_lower_bound
     UBD = m._global_upper_bound
-    return abs(UBD - m._global_lower_bound)/abs(UBD)
+    if m._optimization_sense === MOI.MAX_SENSE
+        gap = abs(UBD - LBD)/abs(LBD)
+    else
+        gap = abs(UBD - LBD)/abs(UBD)
+    end
+    return gap
 end
 MOI.get(m::Optimizer, ::MOI.SolverName) = "EAGO: Easy Advanced Global Optimization"
 MOI.get(m::Optimizer, ::MOI.TerminationStatus) = m._termination_status_code
@@ -1052,16 +1099,6 @@ end
 
 
 """
-    initialize_log!
-
-Creates the required storage variables for logging data at various iterations.
-"""
-function initialize_log!(m::Optimizer)
-    m.log = Log()
-    return
-end
-
-"""
     log_iteration!
 
 If 'logging_on' is true, the 'global_lower_bound', 'global_upper_bound',
@@ -1073,12 +1110,17 @@ function log_iteration!(x::Optimizer)
 
     if x.log_on
 
-        log = x.log
+        log = x._log
         if (mod(x._iteration_count, x.log_interval) == 0 || x._iteration_count == 1)
 
             if x.log_subproblem_info
-                push!(log.current_lower_bound, x._lower_objective_value)
-                push!(log.current_upper_bound, x._upper_objective_value)
+                if x._optimization_sense === MOI.MIN_SENSE
+                    push!(log.current_lower_bound, x._lower_objective_value)
+                    push!(log.current_upper_bound, x._upper_objective_value)
+                else
+                    push!(log.current_lower_bound, -x._upper_objective_value)
+                    push!(log.current_upper_bound, -x._lower_objective_value)
+                end
 
                 push!(log.preprocessing_time, x._last_preprocess_time)
                 push!(log.lower_problem_time, x._last_lower_problem_time)
@@ -1091,8 +1133,13 @@ function log_iteration!(x::Optimizer)
                 push!(log.postprocess_feasibility, x._postprocess_feasibility)
             end
 
-            push!(log.global_lower_bound, x._global_lower_bound)
-            push!(log.global_upper_bound, x._global_upper_bound)
+            if x._optimization_sense === MOI.MIN_SENSE
+                push!(log.global_lower_bound, x._global_lower_bound)
+                push!(log.global_upper_bound, x._global_upper_bound)
+            else
+                push!(log.global_lower_bound, -x._global_upper_bound)
+                push!(log.global_upper_bound, -x._global_lower_bound)
+            end
             push!(log.run_time, x._run_time)
             push!(log.node_count, x._node_count)
 

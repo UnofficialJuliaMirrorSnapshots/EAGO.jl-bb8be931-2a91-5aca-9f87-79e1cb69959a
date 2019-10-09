@@ -74,7 +74,12 @@ function trivial_filtering!(x::Optimizer, y::NodeBB)
     return
 end
 
+"""
+    bool_indx_diff
 
+Utility function used to set vector of booleans z to x & ~y. Avoids the
+generation of conversion of the BitArray created by broadcasting logical operators.
+"""
 function bool_indx_diff(z::Vector{Bool},x::Vector{Bool}, y::Vector{Bool})
     for i = 1:length(z)
         @inbounds z[i] = (x[i] & ~y[i])
@@ -201,12 +206,21 @@ function aggressive_filtering!(x::Optimizer, y::NodeBB)
     copyto!(x._obbt_working_upper_index, x._new_upp_index)
     return true
 end
+
+"""
+    aggressive_obbt_on_heurestic
+
+Routine that determines if aggressive filtering should be used. Currently,
+a user-specified option.
+"""
 aggressive_obbt_on_heurestic(x::Optimizer) = x.obbt_aggressive_on
 
 """
     obbt
 
-Performs OBBT with filtering and greedy ordering
+Performs OBBT with filtering and greedy ordering as detailed in:
+Gleixner, A.M., Berthold, T., Müller, B. et al. J Glob Optim (2017) 67: 731.
+https://doi.org/10.1007/s10898-016-0450-4
 """
 function obbt(x::Optimizer)
 
@@ -218,9 +232,9 @@ function obbt(x::Optimizer)
 
     # solve initial problem to feasibility
     update_relaxed_problem_box!(x, y)
-    relax_problem!(x, ymid)
+    relax_problem!(x, ymid, 1)
     relax_objective!(x, ymid)
-    objective_cut_linear!(x)
+    objective_cut_linear!(x, 1)
     MOI.set(x.relaxed_optimizer, MOI.ObjectiveSense(), MOI.FEASIBILITY_SENSE)
     MOI.optimize!(x.relaxed_optimizer)
 
@@ -277,6 +291,7 @@ function obbt(x::Optimizer)
 
             @inbounds x._obbt_working_lower_index[lower_indx] = false
             @inbounds var = x._lower_variable[lower_indx]
+            # SHOULD UPDATE BOX HERE TOO
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(x.relaxed_optimizer, MOI.ObjectiveFunction{SV}(), var)
             MOI.optimize!(x.relaxed_optimizer)
@@ -559,7 +574,7 @@ end
 Checks to see if constraint is a bivariant quadratic term
 ```
 function check_bivariate_quad(f::MOI.ScalarQuadraticFunction{Float64})
-    vIndx = Int[]
+    vIndx = Int64[]
     (length(f.quadratic_terms) > 3) && (return false)
     (length(f.affine_terms) > 2) && (return false)
     for i in f.affine_terms push!(vIndx,i.variable_index.value) end
