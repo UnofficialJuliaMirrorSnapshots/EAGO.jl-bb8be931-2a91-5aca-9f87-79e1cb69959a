@@ -7,28 +7,40 @@ and the duality information obtained from the relaxation.
 function variable_dbbt!(x::NodeBB, mult_lo::Vector{Float64}, mult_hi::Vector{Float64},
                         LBD::Float64, UBD::Float64, nx::Int64)
 
+    sempty = isempty(x)
+    oldx = deepcopy(x)
     cut = 0.0
     vb = 0.0
+    lvbs = x.lower_variable_bounds
+    uvbs = x.upper_variable_bounds
     if LBD <= UBD
         for i = 1:nx
-            @inbounds mult_lo = mult_lo[i]
-            @inbounds mult_hi = mult_hi[i]
-            if mult_lo > 0.0
-                @inbounds cut = x.upper_variable_bounds[i] - (UBD - LBD)/mult_lo
-                @inbounds vb = x.lower_variable_bounds[i]
-                if cut > vb
-                    @inbounds x.lower_variable_bounds[i] = cut
+            @inbounds ml = mult_lo[i]
+            @inbounds mh = mult_hi[i]
+            if ml > 0.0
+                @inbounds cut = lvbs[i] + (UBD - LBD)/ml
+                @inbounds vb = uvbs[i]
+                if cut < vb
+                    @inbounds uvbs[i] = cut
                 end
-             elseif mult_hi > 0.0
-                 @inbounds cut = x.lower_variable_bounds[i] + (UBD - LBD)/mult_hi
-                 @inbounds vb = x.upper_variable_bounds[i]
-                 if cut < vb
-                     @inbounds x.upper_variable_bounds[i] = cut
+            elseif mh > 0.0
+                 @inbounds cut = uvbs[i] - (UBD - LBD)/mh
+                 @inbounds vb = lvbs[i]
+                 if cut > vb
+                     @inbounds lvbs[i] = cut
                  end
-             end
+            end
          end
     end
-
+    if (isempty(x) & ~sempty)
+        println("DBBT FATHOMED!!!!!")
+        println("mult_lo: $mult_lo")
+        println("mult_hi: $mult_hi")
+        println("LBD: $LBD")
+        println("UBD: $UBD")
+        println("oldx: $oldx")
+        println("new x: $x")
+    end
     return
 end
 
@@ -688,6 +700,12 @@ function classify_quadratics!(m::Optimizer)
     return
 end
 
+"""
+    univariate_kernel
+
+Kernel of the bound tightening operation on univariant qudaratic functions.
+Called for each univariate function.
+"""
 function univariate_kernel(n::NodeBB,a::Float64,b::Float64,c::Float64,vi::Int)
         flag = true
         term1 = c + (b^2)/(4.0*a)
@@ -715,6 +733,11 @@ function univariate_kernel(n::NodeBB,a::Float64,b::Float64,c::Float64,vi::Int)
         return flag
 end
 
+"""
+    univariate_quadratic
+
+Performs bound tightening on all univariate quadratic functions.
+"""
 function univariate_quadratic(m::Optimizer)
     feas = true
     # fathom ax^2 + bx + c > l quadratics
@@ -745,11 +768,22 @@ function univariate_quadratic(m::Optimizer)
      return feas
 end
 
+"""
+    bivariate_kernel
+
+Kernel of the bound tightening operation on bivariate qudaratic functions.
+Called for each bivariate function.
+"""
 function bivariate_kernel(m::Optimizer,n::NodeBB,ax::Float64,ay::Float64,axy::Float64,
                          bx::Float64,by::Float64,vi1::Int,vi2)
         # Case distinction from Vigerske disseration (TO DO)
 end
 
+"""
+    bivariate_quadratic
+
+Performs bound tightening on all bivariate quadratic functions.
+"""
 function bivariate_quadratic(m::Optimizer,n::NodeBB)
     feas = true
     # fathom ax^2 + bx + c > l quadratics

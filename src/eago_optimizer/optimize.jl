@@ -47,8 +47,11 @@ function gen_quadratic_storage!(x::Optimizer)
         ci = MOI.add_constraint(opt, func, LT(0.0))
         push!(temp_leq_ci, ci)
     end
-    for i in 1:x.cut_max_iterations
-        push!(x._quadratic_ci_leq, temp_leq_ci)
+
+    len_leq_ci = length(temp_leq_ci)
+    push!(x._quadratic_ci_leq, temp_leq_ci)
+    for i in 2:x.cut_max_iterations
+        push!(x._quadratic_ci_leq, fill(CI{SAF,LT}(-1), (len_leq_ci,)))
     end
 
     temp_geq_ci = CI{SAF,LT}[]
@@ -70,8 +73,11 @@ function gen_quadratic_storage!(x::Optimizer)
         ci = MOI.add_constraint(opt, func, LT(0.0))
         push!(temp_geq_ci, ci)
     end
-    for i in 1:x.cut_max_iterations
-        push!(x._quadratic_ci_geq, temp_geq_ci)
+
+    len_geq_ci = length(temp_geq_ci)
+    push!(x._quadratic_ci_geq, temp_geq_ci)
+    for i in 2:x.cut_max_iterations
+        push!(x._quadratic_ci_geq, fill(CI{SAF,LT}(-1), (len_geq_ci,)))
     end
 
     temp_eq_ci = Tuple{CI{SAF,LT},CI{SAF,LT}}[]
@@ -94,9 +100,13 @@ function gen_quadratic_storage!(x::Optimizer)
         c2 = MOI.add_constraint(opt, func, LT(0.0))
         push!(temp_eq_ci, (c1, c2))
     end
-    for i in 1:x.cut_max_iterations
-        push!(x._quadratic_ci_eq, temp_eq_ci)
+
+    len_eq_ci = length(temp_eq_ci)
+    push!(x._quadratic_ci_eq, temp_eq_ci)
+    for i in 2:x.cut_max_iterations
+        push!(x._quadratic_ci_eq, fill((CI{SAF,LT}(-1), CI{SAF,LT}(-1)), (len_eq_ci,)))
     end
+
     return
 end
 
@@ -292,8 +302,6 @@ function initialize_evaluators!(m::Optimizer, flag::Bool)
     nlp_data = m._nlp_data
 
     has_eval = has_evaluator(nlp_data)
-    println("has_eval: $(has_eval)")
-    println("has_eval: $(has_eval)")
     if has_evaluator(nlp_data)
 
         # Build the JuMP NLP evaluator
@@ -376,8 +384,6 @@ function is_convex_quadratic(func::SQF, mult::Float64, cvx_dict::ImmutableDict{I
         end
     end
     Q = sparse(row, column, value)
-    println("Q: $Q")
-    println("size(Q): $(size(Q))")
     s1, s2 = size(Q)
     if length(Q.nzval) > 1
         eigval = eigmin(Array(Q))
@@ -453,7 +459,8 @@ function build_nlp_kernel!(d::Evaluator{N,T}, src::JuMP.NLPEvaluator, x::Optimiz
     m = src.m::Model
     num_variables_ = JuMP.num_variables(m)
     d.variable_number = num_variables_
-    nldata = m.nlp_data::JuMP._NLPData
+    #nldata = m.nlp_data::JuMP._NLPData
+    nldata = deepcopy(m.nlp_data)
     parameter_values = nldata.nlparamvalues
 
     # Copy state of user-defined multivariable functions
@@ -514,6 +521,7 @@ function build_nlp_kernel!(d::Evaluator{N,T}, src::JuMP.NLPEvaluator, x::Optimiz
             if (current_value == unvisited_tuple)
                 d.index_to_variable[op] = (indx, 1, 1)
             end
+            @inbounds d.objective.numvalued[indx] = false
         elseif ntype == JuMP._Derivatives.VALUE
             @inbounds d.objective.numberstorage[indx] = d.objective.const_values[op]
             @inbounds d.objective.numvalued[indx] = true
@@ -530,6 +538,7 @@ function build_nlp_kernel!(d::Evaluator{N,T}, src::JuMP.NLPEvaluator, x::Optimiz
                 if (current_value == unvisited_tuple)
                     d.index_to_variable[op] = (indx, cindx, 2)
                 end
+                @inbounds constraint.numvalued[indx] = false
             elseif node.nodetype == JuMP._Derivatives.VALUE
                 @inbounds constraint.numberstorage[indx] = constraint.const_values[op]
                 @inbounds constraint.numvalued[indx] = true
@@ -547,6 +556,7 @@ function build_nlp_kernel!(d::Evaluator{N,T}, src::JuMP.NLPEvaluator, x::Optimiz
                 if (current_value == unvisited_tuple)
                     d.index_to_variable[op] = (indx, cindx, 3)
                 end
+                @inbounds subexpress.numvalued[indx] = false
             elseif node.nodetype == JuMP._Derivatives.VALUE
                 @inbounds subexpress.numberstorage[indx] = subexpress.const_values[op]
                 @inbounds subexpress.numvalued[indx] = true
@@ -711,7 +721,9 @@ function set_global_lower_bound!(x::Optimizer)
     if ~isempty(x._stack)
         min_node = minimum(x._stack)
         lower_bound = min_node.lower_bound
-        x._global_lower_bound = lower_bound
+        if x._global_lower_bound < lower_bound
+            x._global_lower_bound = lower_bound
+        end
     end
     return
 end
@@ -801,6 +813,8 @@ function global_solve!(x::Optimizer)
                             branch_node!(x)
                         end
                     end
+                else
+                    x._global_lower_bound = x._lower_objective_value
                 end
             end
             fathom!(x)

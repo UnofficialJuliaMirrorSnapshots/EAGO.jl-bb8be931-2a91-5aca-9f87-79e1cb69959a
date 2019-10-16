@@ -35,32 +35,62 @@ function forward_plus!(k::Int64, children_idx::UnitRange{Int64}, children_arr::V
                        first_eval_flag::Bool) where {N, T<:RelaxTag}
     tmp_num = 0.0
     tmp_mc = zero(MC{N,T})
-    tmp_mc0 = zero(MC{N,T})
-    tmp_intv = Interval{Float64}(0.0)
     isnum = true
     chdset = true
-    for c_idx in children_idx
-        @inbounds ix = children_arr[c_idx]
-        @inbounds chdset = numvalued[ix]
-        if chdset
-            @inbounds tmp_num += numberstorage[ix]
-        else
-            @inbounds tmp_mc0 = setstorage[ix]
-            @inbounds tmp_intv = setstorage[k].Intv
-            if first_eval_flag
-                @inbounds tmp_mc += tmp_mc0
+    n = length(children_idx)
+    if n == 2
+        @inbounds c_idx_1 = children_idx[1]
+        @inbounds c_idx_2 = children_idx[2]
+        @inbounds ix1 = children_arr[c_idx_1]
+        @inbounds ix2 = children_arr[c_idx_2]
+        @inbounds chdset1 = numvalued[ix1]
+        @inbounds chdset2 = numvalued[ix2]
+        if first_eval_flag
+            if chdset1
+                tmp_num += numberstorage[ix1]
             else
-                tmp_mc += McCormick.plus_kernel(tmp_mc, tmp_mc0, tmp_intv)
+                tmp_mc += setstorage[ix1]
+            end
+            if chdset2
+                tmp_num += numberstorage[ix2]
+            else
+                tmp_mc += setstorage[ix2]
+            end
+            isnum = (chdset1 & chdset2)
+            @inbounds numvalued[k] = isnum
+            #println("isnum: $isnum")
+        else
+            if (~chdset1 & ~chdset2)
+                tmp_mc = McCormick.plus_kernel(setstorage[ix1], setstorage[ix2], setstorage[k])
+            elseif chdset1 & ~chdset2
+                tmp_mc = McCormick.plus_kernel(numberstorage[ix1], setstorage[ix2], setstorage[k])
+            elseif chdset2 & ~chdset1
+                tmp_mc = McCormick.plus_kernel(setstorage[ix1], numberstorage[ix2], setstorage[k])
+            else
+                @inbounds tmp_num = numberstorage[k]
             end
         end
-        isnum &= chdset
+    else
+        for c_idx in children_idx
+            @inbounds ix = children_arr[c_idx]
+            @inbounds chdset = numvalued[ix]
+            if chdset
+                @inbounds tmp_num += numberstorage[ix]
+            else
+                @inbounds tmp_mc += setstorage[ix]
+            end
+            isnum &= chdset
+        end
+        @inbounds numvalued[k] = isnum
     end
-    @inbounds numvalued[k] = isnum
     if isnum
         @inbounds numberstorage[k] = tmp_num
     else
         @inbounds setstorage[k] = tmp_num + tmp_mc
     end
+
+    #println("k = $k, numvalued[$k] = $(numvalued[k])")
+
     return
 end
 
@@ -76,6 +106,7 @@ function forward_minus!(k::Int64, x_values::Vector{Float64}, ix1::Int64, ix2::In
     if first_eval_flag
         if isnum
             @inbounds tmp_num_1 = numberstorage[ix1] - numberstorage[ix2]
+            @inbounds numberstorage[k] = tmp_num_1
         elseif ~chdset1 && chdset2
             @inbounds tmp_mc_1 = setstorage[ix1] - numberstorage[ix2]
         elseif chdset1 && ~chdset2
@@ -84,14 +115,16 @@ function forward_minus!(k::Int64, x_values::Vector{Float64}, ix1::Int64, ix2::In
             @inbounds tmp_mc_1 = setstorage[ix1] - setstorage[ix2]
         end
     else
-        if ~isnum
-            @inbounds tmp_mc_1 = McCormick.minus_kernel(tmp_mc_1, setstorage[ix2], setstorage[k].Intv)
+        if ~chdset1 && chdset2
+            @inbounds tmp_mc_1 = McCormick.minus_kernel(setstorage[ix1], numberstorage[ix2], setstorage[k].Intv)
+        elseif chdset1 && ~chdset2
+            @inbounds tmp_mc_1 = McCormick.minus_kernel(numberstorage[ix1], setstorage[ix2], setstorage[k].Intv)
+        else
+            @inbounds tmp_mc_1 = McCormick.minus_kernel(setstorage[ix1], setstorage[ix2], setstorage[k].Intv)
         end
     end
     @inbounds numvalued[k] = isnum
-    if isnum
-        @inbounds numberstorage[k] = tmp_num_1
-    else
+    if ~isnum
         @inbounds setstorage[k] = set_value_post(x_values, tmp_mc_1, current_node, subgrad_tighten)
     end
     return
@@ -163,26 +196,26 @@ function forward_power!(k::Int64, x_values::Vector{Float64}, children_idx::UnitR
             @inbounds numberstorage[k] = tmp_num_1^tmp_num_2
         else
             if first_eval_flag
-                if (~chdset1 && chdset2)
+                if (~chdset1 & chdset2)
                     tmp_mc_1 = pow(tmp_mc_1, tmp_num_2)
-                elseif (chdset1 && ~chdset2)
+                elseif (chdset1 & ~chdset2)
                     tmp_mc_1 = pow(tmp_num_1, tmp_mc_2)
-                elseif (~chdset1 && ~chdset2)
+                elseif (~chdset1 & ~chdset2)
                     tmp_mc_1 = pow(tmp_mc_1, tmp_mc_2)
                 end
             else
-                if (~chdset1 && chdset2)
+                if (~chdset1 & chdset2)
                     @inbounds tmp_mc_1 = ^(tmp_mc_1, tmp_num_2, setstorage[k].Intv)
-                elseif (chdset1 && ~chdset2)
+                elseif (chdset1 & ~chdset2)
                     @inbounds tmp_mc_1 = ^(tmp_num_1, tmp_mc_2, setstorage[k].Intv)
-                elseif (~chdset1 && ~chdset2)
+                elseif (~chdset1 & ~chdset2)
                     @inbounds tmp_mc_1 = ^(tmp_mc_1, tmp_mc_2, setstorage[k].Intv)
                 end
             end
             @inbounds setstorage[k] = set_value_post(x_values, tmp_mc_1, current_node, subgrad_tighten)
         end
     end
-    @inbounds numvalued[k] = (chdset1 && chdset2)
+    @inbounds numvalued[k] = (chdset1 & chdset2)
     return
 end
 
@@ -245,7 +278,8 @@ function forward_eval(setstorage::Vector{MC{N,T}}, numberstorage::Vector{Float64
                       subexpression_isnum::Vector{Bool}, user_input_buffer::Vector{MC{N,T}}, subgrad_tighten::Bool,
                       tpdict::Dict{Int64,Tuple{Int64,Int64,Int64,Int64}}, tp1storage::Vector{Float64},
                       tp2storage::Vector{Float64}, tp3storage::Vector{Float64}, tp4storage::Vector{Float64},
-                      first_eval_flag::Bool, user_operators::JuMP._Derivatives.UserOperatorRegistry) where {N,T<:RelaxTag}
+                      first_eval_flag::Bool, user_operators::JuMP._Derivatives.UserOperatorRegistry,
+                      seeds::Vector{SVector{N,Float64}}) where {N,T<:RelaxTag}
 
     @assert length(numberstorage) >= length(nd)
     @assert length(setstorage) >= length(nd)
@@ -263,9 +297,11 @@ function forward_eval(setstorage::Vector{MC{N,T}}, numberstorage::Vector{Float64
         @inbounds nod = nd[k]
         op = nod.index
         if nod.nodetype == JuMP._Derivatives.VALUE
+            numvalued[k] = true
         elseif nod.nodetype == JuMP._Derivatives.PARAMETER
+            numvalued[k] = true
         elseif nod.nodetype == JuMP._Derivatives.VARIABLE
-            seed = seed_gradient(op, Val(N))
+            seed = seeds[op]
             xMC = MC{N,T}(x_values[op], x_values[op],
                         Interval{Float64}(current_node.lower_variable_bounds[op],
                                      current_node.upper_variable_bounds[op]),
@@ -480,13 +516,14 @@ function forward_eval_obj(d::Evaluator, x::Vector{Float64})
     user_input_buffer = d.jac_storage
     subgrad_tighten = d.subgrad_tighten
 
+    seeds = d.seeds
     for (ind, k) in enumerate(reverse(d.subexpression_order))
         ex = d.subexpressions[k]
         temp = forward_eval(ex.setstorage, ex.numberstorage, ex.numvalued,
                                          ex.nd, ex.adj, d.current_node,
                                          x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
                                          user_input_buffer, subgrad_tighten, #ex.tpdict,
-                                         user_operators)
+                                         user_operators,seeds)
         d.subexpression_isnum[ind] = ex.numvalued[1]
         if d.subexpression_isnum[ind]
             d.subexpression_values_flt[k] = temp
@@ -501,7 +538,7 @@ function forward_eval_obj(d::Evaluator, x::Vector{Float64})
                      ex.nd, ex.adj, d.current_node,
                      x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
                      user_input_buffer, subgrad_tighten, #ex.tpdict,
-                     user_operators)
+                     user_operators,seeds)
     end
 end
 
@@ -513,6 +550,7 @@ function forward_eval_all(d::Evaluator, x::Vector{Float64})
     user_input_buffer = d.jac_storage
     subgrad_tighten = d.subgrad_tighten
     first_eval_flag = d.first_eval_flag
+    seeds = d.seeds
 
     for (ind, k) in enumerate(reverse(d.subexpression_order))
         subex = d.subexpressions[k]
@@ -521,7 +559,7 @@ function forward_eval_all(d::Evaluator, x::Vector{Float64})
                     x, subexpr_values_flt, subexpr_values_set, d.subexpression_isnum,
                     user_input_buffer, subgrad_tighten, subex.tpdict,
                     subex.tp1storage, subex.tp2storage, subex.tp3storage,
-                    subex.tp4storage, first_eval_flag, user_operators)
+                    subex.tp4storage, first_eval_flag, user_operators, seeds)
 
         d.subexpression_isnum[ind] = subex.numvalued[1]
         if d.subexpression_isnum[ind]
@@ -538,7 +576,7 @@ function forward_eval_all(d::Evaluator, x::Vector{Float64})
                      x, subexpr_values_flt, subexpr_values_set,
                      d.subexpression_isnum, user_input_buffer, subgrad_tighten, ex.tpdict,
                      ex.tp1storage, ex.tp2storage, ex.tp3storage, ex.tp4storage,
-                     first_eval_flag, user_operators)
+                     first_eval_flag, user_operators, seeds)
     end
 
     for (ind,ex) in enumerate(d.constraints)
@@ -547,7 +585,7 @@ function forward_eval_all(d::Evaluator, x::Vector{Float64})
                      x, subexpr_values_flt, subexpr_values_set,
                      d.subexpression_isnum, user_input_buffer, subgrad_tighten, ex.tpdict,
                      ex.tp1storage, ex.tp2storage, ex.tp3storage, ex.tp4storage,
-                     first_eval_flag, user_operators)
+                     first_eval_flag, user_operators, seeds)
     end
 
     return
@@ -601,12 +639,12 @@ function reverse_eval(setstorage::Vector{T}, numberstorage, numvalued, subexpres
                 if false #lenx == 2
                     @inbounds child1 = first(children_idx)
                     @inbounds child2 = last(children_idx)
-                    println("child1: $child1")
-                    println("child2: $child2")
+                    #println("child1: $child1")
+                    #println("child2: $child2")
                     @inbounds ix1 = children_arr[child1]
                     @inbounds ix2 = children_arr[child2]
-                    println("ix1: $ix1")
-                    println("ix2: $ix2")
+                    #println("ix1: $ix1")
+                    #println("ix2: $ix2")
                     @inbounds chdset1 = numvalued[ix1]
                     @inbounds chdset2 = numvalued[ix2]
                     @inbounds nsto1 = numberstorage[ix1]
@@ -867,7 +905,6 @@ by a reverse pass if `d.has_reverse` as long as the node between passes differs
 by more that `d.fw_atol` at each iteration.
 """
 function forward_reverse_pass(d::Evaluator, x::Vector{Float64})
-    start_time = time()
     flag = true
     #if ~same_box(d.current_node, d.last_node, 0.0)
     #   d.last_node = d.current_node
@@ -877,7 +914,6 @@ function forward_reverse_pass(d::Evaluator, x::Vector{Float64})
                     d.first_eval_flag = (i == 1)
                     if flag
                         forward_eval_all(d,x)
-                        next_time = time() - start_time
                         flag = reverse_eval_all(d,x)
                         ~flag && break
                         same_box(d.current_node, get_node(d), d.cp_tolerance) && break

@@ -76,10 +76,11 @@ function branch_node!(t::ExtensionType, x::Optimizer)
 
     return
 end
+
 """
     single_storage!
 
-Stores the one nodes to the stack.
+Stores the current node to the stack after updating lower/upper bounds.
 """
 function single_storage!(t::ExtensionType, x::Optimizer)
     y = x._current_node
@@ -126,7 +127,13 @@ Checks to see if current node should be reprocessed.
 """
 repeat_check(t::ExtensionType, x::Optimizer) = false
 
-relative_gap(L::Float64, U::Float64) = abs(U - L)/(min(abs(L),abs(U)))
+function relative_gap(L::Float64, U::Float64)
+    gap = Inf
+    if (L > -Inf) & (U < Inf)
+        gap = abs(U - L)/(max(abs(L),abs(U)))
+    end
+    return gap
+end
 function relative_tolerance(L::Float64, U::Float64, tol::Float64)
     return (relative_gap(L, U)  > tol) || ~(L > -Inf)
 end
@@ -145,19 +152,19 @@ function termination_check(t::ExtensionType, x::Optimizer)
 
     if isempty(x._stack)
 
-        if (x._first_solution_node > 0)
+        #if (x._first_solution_node > 0)
 
-            x._termination_status_code = MOI.OPTIMAL
-            x._result_status_code = MOI.FEASIBLE_POINT
-            (x.verbosity >= 3) && println("Empty Stack: Exhaustive Search Finished")
+        #    x._termination_status_code = MOI.OPTIMAL
+        #    x._result_status_code = MOI.FEASIBLE_POINT
+        #    (x.verbosity >= 3) && println("Empty Stack: Exhaustive Search Finished")
 
-        else
+        #else
 
-            x._termination_status_code = MOI.INFEASIBLE
-            x._result_status_code = MOI.INFEASIBILITY_CERTIFICATE
-            (x.verbosity >= 3) && println("Empty Stack: Infeasible")
+        x._termination_status_code = MOI.INFEASIBLE
+        x._result_status_code = MOI.INFEASIBILITY_CERTIFICATE
+        (x.verbosity >= 3) && println("Empty Stack: Infeasible")
 
-        end
+        #end
     elseif length(x._stack) >= x.node_limit
 
         x._termination_status_code = MOI.NODE_LIMIT
@@ -200,15 +207,19 @@ end
 """
     convergence_check
 
-Checks for termination of algorithm due to satisfying absolute or relative
-tolerance, infeasibility, or a specified limit.
+Checks for convergence of algorithm with respect to absolute and/or relative
+tolerances.
 """
 function convergence_check(t::ExtensionType, x::Optimizer)
 
+  #println("ran convergence check...")
   L = x._lower_objective_value
   U = x._global_upper_bound
   t = (U - L) <= x.absolute_tolerance
-  t |= (abs(U - L)/(max(abs(L),abs(U))) <= x.relative_tolerance)
+  if (U < Inf) & (L > Inf)
+      t |= (abs(U - L)/(max(abs(L),abs(U))) <= x.relative_tolerance)
+  end
+ # println("algorithm converged... $t")
   return t
 end
 
@@ -247,7 +258,8 @@ end
     is_feasible_solution
 
 Takes an `MOI.TerminationStatusCode` and a `MOI.ResultStatusCode` and returns `true`
-if this corresponds to a solution that is proven feasible. Returns `false` otherwise.
+if this corresponds to a solution that is proven to be feasible.
+Returns `false` otherwise.
 """
 function is_feasible_solution(t::MOI.TerminationStatusCode, r::MOI.ResultStatusCode)
 
@@ -304,8 +316,9 @@ end
 """
     preprocess!
 
-Runs interval, linear, and quadratic contractor methods up to tolerances
-specified in `EAGO.Optimizer` object.
+Runs interval, linear, quadratic contractor methods followed by obbt and a
+constraint programming walk up to tolerances specified in
+`EAGO.Optimizer` object.
 """
 function preprocess!(t::ExtensionType, x::Optimizer)
 
@@ -342,6 +355,7 @@ function preprocess!(t::ExtensionType, x::Optimizer)
     end
 
     if ((x.cp_depth >= x._iteration_count) & feas)
+        println("attempted cpwalk!!!")
         feas = cpwalk(x)
     end
 
@@ -352,6 +366,13 @@ function preprocess!(t::ExtensionType, x::Optimizer)
     return
 end
 
+"""
+    update_relaxed_problem_box!
+
+Updates the relaxed constraint by setting the constraint set of v == x* ,
+xL_i <= x_i , and x_i <= xU_i for each such constraint added to the relaxed
+    optimizer.
+"""
 function update_relaxed_problem_box!(x::Optimizer, y::NodeBB)
 
     opt = x.relaxed_optimizer
@@ -396,24 +417,23 @@ ScalarQuadaraticFunction on a node y. Returns the lower bound if flag
 is true and the upper bound if flag is false.
 """
 function interval_bound(s::SAF, y::NodeBB, flag::Bool)
-    val_lo = flag ? s.constant : -1.0*s.constant
+    val_lo = s.constant
     lo_bnds = y.lower_variable_bounds
     up_bnds = y.upper_variable_bounds
-    if flag
-        for term in s.terms
-            vi = term.variable_index.value
-            if (term.coefficient > 0.0)
-                if flag
-                    @inbounds val_lo += term.coefficient*lo_bnds[vi]
-                else
-                    @inbounds val_lo += term.coefficient*up_bnds[vi]
-                end
+    for term in s.terms
+        vi = term.variable_index.value
+        coeff = term.coefficient
+        if (coeff > 0.0)
+            if flag
+                @inbounds val_lo += coeff*lo_bnds[vi]
             else
-                if flag
-                    @inbounds val_lo += term.coefficient*up_bnds[vi]
-                else
-                    @inbounds val_lo += term.coefficient*lo_bnds[vi]
-                end
+                @inbounds val_lo += coeff*up_bnds[vi]
+            end
+        else
+            if flag
+                @inbounds val_lo += coeff*up_bnds[vi]
+            else
+                @inbounds val_lo += coeff*lo_bnds[vi]
             end
         end
     end
@@ -423,26 +443,31 @@ function interval_bound(s::SQF, y::NodeBB, flag::Bool)
     lo_bnds = y.lower_variable_bounds
     up_bnds = y.upper_variable_bounds
     val_intv = Interval(s.constant)
-    if flag
-        for term in s.affine_terms
-            coeff = term.coefficient
-            vi = term.variable_index.value
-            @inbounds il1b = lo_bnds[vi]
-            @inbounds iu1b = up_bnds[vi]
-            val_intv += coeff*Interval(il1b, iu1b)
-        end
-        for term in s.quadratic_terms
-            coeff = term.coefficient
-            vi1 = term.variable_index_1.value
-            vi2 = term.variable_index_2.value
-            @inbounds il1b = lo_bnds[vi1]
+    for term in s.affine_terms
+        coeff = term.coefficient
+        vi = term.variable_index.value
+        @inbounds il1b = lo_bnds[vi]
+        @inbounds iu1b = up_bnds[vi]
+        val_intv += coeff*Interval(il1b, iu1b)
+    end
+    for term in s.quadratic_terms
+        coeff = term.coefficient
+        vi1 = term.variable_index_1.value
+        vi2 = term.variable_index_2.value
+        @inbounds il1b = lo_bnds[vi1]
+        @inbounds iu1b = up_bnds[vi1]
+        if vi1 == vi2
+            val_intv += coeff*Interval(il1b, iu1b)^2
+        else
             @inbounds il2b = lo_bnds[vi2]
-            @inbounds iu1b = up_bnds[vi1]
             @inbounds iu2b = up_bnds[vi2]
             val_intv += coeff*Interval(il1b, iu1b)*Interval(il2b, iu2b)
         end
     end
-    return (flag ? val_intv.lo : val_intv.hi)
+    if flag
+        return val_intv.lo
+    end
+    return val_intv.hi
 end
 
 """
@@ -472,8 +497,8 @@ function interval_lower_bound!(x::Optimizer, y::NodeBB)
         constrains_bnd_hi = d.constraints_ubd
 
         for i in 1:d.constraint_number
-            @inbounds constaints_intv_li = constraints_bnd_lo[i]
-            @inbounds constaints_intv_hi = constraints_bnd_hi[i]
+            @inbounds constraints_intv_li = constraints_bnd_lo[i]
+            @inbounds constraints_intv_hi = constraints_bnd_hi[i]
             if (constaints_intv_li > constaints_intv_hi) ||
                (constaints_intv_hi < constaints_intv_li)
                 feas = false
@@ -570,11 +595,14 @@ function lower_problem!(t::ExtensionType, x::Optimizer)
     x._lower_termination_status = MOI.get(opt, MOI.TerminationStatus())
     x._lower_result_status = MOI.get(opt, MOI.PrimalStatus())
     valid_flag, feas_flag = is_globally_optimal(x._lower_termination_status, x._lower_result_status)
+    #println("valid_flag: $(valid_flag)")
+    #println("feas_flag: $(feas_flag)")
 
     if valid_flag
         if feas_flag
             x._lower_feasibility = true
             x._lower_objective_value = MOI.get(opt, MOI.ObjectiveValue())
+            #println("lower_objective_value: $(x._lower_objective_value)")
             @inbounds x._lower_solution[:] = MOI.get(opt, MOI.VariablePrimal(), x._lower_variable_index)
             x._cut_add_flag = x._lower_feasibility
             set_dual!(x)
@@ -585,39 +613,53 @@ function lower_problem!(t::ExtensionType, x::Optimizer)
         end
     else
         interval_lower_bound!(x, y)
+        #println("lower feasibility: $(x._lower_feasibility)")
+        #println("lower objective: $(x._lower_objective_value)")
         x._cut_add_flag = false
     end
+
     return
 end
 
+"""
+    cut_update
+
+Updates the internal storage in the optimizer after a valid feasible cut is added.
+"""
 function cut_update(x::Optimizer)
     x._cut_feasibility = true
 
     opt = x.relaxed_optimizer
     obj_val = MOI.get(opt, MOI.ObjectiveValue())
-    prior_obj_val = (x._cut_iterations == 0) ? x._lower_objective_value : x._cut_objective_value
+    prior_obj_val = (x._cut_iterations == 2) ? x._lower_objective_value : x._cut_objective_value
 
-    if prior_obj_val > obj_val
+    if prior_obj_val < obj_val
         x._cut_objective_value = obj_val
         x._lower_objective_value = obj_val
         x._lower_termination_status = x._cut_termination_status
         x._lower_result_status = x._cut_result_status
         @inbounds x._cut_solution[:] = MOI.get(opt, MOI.VariablePrimal(), x._lower_variable_index)
-        copy_to!(x._lower_solution, x._cut_solution)
+        copyto!(x._lower_solution, x._cut_solution)
         set_dual!(x)
         x._cut_add_flag = true
     else
         x._cut_add_flag = false
     end
+
     return
 end
 
 """
     cut_condition
 
-Branch-and-cut feature currently under development. Currently, returns false.
+Checks if a cut should be added and computes a new reference point to add the
+cut at. If no cut should be added the constraints not modified in place are
+deleted from the relaxed optimizer and the solution is compared with the
+interval lower bound. The best lower bound is then used.
 """
 function cut_condition(t::ExtensionType, x::Optimizer)
+
+
 
     flag = x._cut_add_flag
     flag &= (x._cut_iterations < x.cut_max_iterations)
@@ -633,56 +675,57 @@ function cut_condition(t::ExtensionType, x::Optimizer)
         else
             flag &= false
         end
+    end
 
-        if ~flag
-            # if not further cuts then empty the added cuts
-            for i in 2:x._cut_iterations
-                for ci in x._quadratic_ci_leq[i]
-                    MOI.delete(x.relaxed_optimizer, ci)
-                end
-                for ci in x._quadratic_ci_geq[i]
-                    MOI.delete(x.relaxed_optimizer, ci)
-                end
-                for (ci1,ci2) in x._quadratic_ci_eq[i]
-                    MOI.delete(x.relaxed_optimizer, ci1)
-                    MOI.delete(x.relaxed_optimizer, ci2)
-                end
-                for ci in x._lower_nlp_affine[i]
-                    MOI.delete(x.relaxed_optimizer, ci)
-                end
-                for ci in x._upper_nlp_affine[i]
+    if ~flag
+        # if not further cuts then empty the added cuts
+        for i in 2:x._cut_iterations
+            for ci in x._quadratic_ci_leq[i]
+                MOI.delete(x.relaxed_optimizer, ci)
+            end
+            for ci in x._quadratic_ci_geq[i]
+                MOI.delete(x.relaxed_optimizer, ci)
+            end
+            for (ci1,ci2) in x._quadratic_ci_eq[i]
+                MOI.delete(x.relaxed_optimizer, ci1)
+                MOI.delete(x.relaxed_optimizer, ci2)
+            end
+            for ci in x._lower_nlp_affine[i]
+                MOI.delete(x.relaxed_optimizer, ci)
+            end
+            for ci in x._upper_nlp_affine[i]
+                MOI.delete(x.relaxed_optimizer, ci)
+            end
+        end
+        if x._objective_cut_set !== -1
+            if ~x._objective_is_sv
+                for i in 2:x._cut_iterations
+                    ci = x._objective_cut_ci_saf[i]
                     MOI.delete(x.relaxed_optimizer, ci)
                 end
             end
-            if x._objective_cut_set !== -1
-                if ~x._objective_is_sv
-                    for i in 2:x._cut_iterations
-                        ci = x._objective_cut_ci_saf[i]
-                        MOI.delete(x.relaxed_optimizer, ci)
-                    end
-                end
-            end
+        end
+    end
 
-            # check to see if interval bound is preferable
-            if x._lower_feasibility
-                if x._objective_is_nlp
-                    intv_lo = eval_objective_lo(x._relaxed_evaluator)
-                else
-                    if x._objective_is_sv
-                        obj_indx = x._objective_sv.variable.value
-                        @inbounds intv_lo = y.lower_variable_bounds[obj_indx]
-                    elseif x._objective_is_saf
-                        intv_lo = interval_bound(x._objective_saf, y, true)
-                    elseif x._objective_is_sqf
-                        intv_lo = interval_bound(x._objective_sqf, y, true)
-                    end
-                end
-                if (intv_lo > x._lower_objective_value)
-                    x._lower_objective_value = intv_lo
-                    fill!(x._lower_lvd, 0.0)
-                    fill!(x._lower_uvd, 0.0)
-                end
+    # check to see if interval bound is preferable
+    if x._lower_feasibility
+        y = x._current_node
+        if x._objective_is_nlp
+            intv_lo = eval_objective_lo(x._relaxed_evaluator)
+        else
+            if x._objective_is_sv
+                obj_indx = x._objective_sv.variable.value
+                @inbounds intv_lo = y.lower_variable_bounds[obj_indx]
+            elseif x._objective_is_saf
+                intv_lo = interval_bound(x._objective_saf, y, true)
+            elseif x._objective_is_sqf
+                intv_lo = interval_bound(x._objective_sqf, y, true)
             end
+        end
+        if (intv_lo > x._lower_objective_value)
+            x._lower_objective_value = intv_lo
+            fill!(x._lower_lvd, 0.0)
+            fill!(x._lower_uvd, 0.0)
         end
     end
 
@@ -690,13 +733,16 @@ function cut_condition(t::ExtensionType, x::Optimizer)
 
     return flag
 end
+
 """
     add_cut!
 
-Branch-and-Cut under development.
+Adds a cut for each constraint and the objective function to the subproblem.
 """
 function add_cut!(t::ExtensionType, x::Optimizer)
 
+
+    #println("x._cut_iterations: $(x._cut_iterations)")
     relax_problem!(x, x._current_xref, x._cut_iterations)
     relax_objective!(x, x._current_xref)
     if x.objective_cut_on
@@ -722,11 +768,18 @@ function add_cut!(t::ExtensionType, x::Optimizer)
     else
         x._cut_add_flag = false
     end
+
     return
 end
 
-# is root node? is at iteration number? did last bound improve? did last bound
-# land in current domain? can omit is_integer_feasible(x) since still an NLP solver
+"""
+    default_nlp_heurestic
+
+Default check to see if the upper bounding problem should be run. By default,
+The upper bounding problem is run on every node up to depth `upper_bounding_depth`
+and is triggered with a probability of `0.5^(depth - upper_bounding_depth)`
+afterwards.
+"""
 function default_nlp_heurestic(x::Optimizer, y::NodeBB)
     bool = false
     bool |= (y.depth <= x.upper_bounding_depth)
@@ -737,8 +790,8 @@ end
 """
     solve_local_nlp!
 
-Constructs and solves the problem locally on on node `y` and saves upper
-bounding info to `x.current_upper_info`.
+Constructs and solves the problem locally on on node `y` updated the upper
+solution informaton in the optimizer.
 """
 function solve_local_nlp!(x::Optimizer{S,T}) where {S <: MOI.AbstractOptimizer, T <: MOI.AbstractOptimizer}
 
@@ -801,7 +854,6 @@ function solve_local_nlp!(x::Optimizer{S,T}) where {S <: MOI.AbstractOptimizer, 
 
         # Add nonlinear evaluation block
         MOI.set(upper_optimizer, MOI.NLPBlock(), x._nlp_data)
-        #println("x._nlp_data: $(x._nlp_data)")
 
         MOI.set(upper_optimizer, MOI.ObjectiveSense(), MOI.MIN_SENSE)
         if x._objective_is_sv
@@ -816,10 +868,6 @@ function solve_local_nlp!(x::Optimizer{S,T}) where {S <: MOI.AbstractOptimizer, 
         MOI.optimize!(upper_optimizer)
 
         # Process output info and save to CurrentUpperInfo object
-        temp_term_status = MOI.get(upper_optimizer, MOI.TerminationStatus())
-        temp_result_status = MOI.get(upper_optimizer, MOI.PrimalStatus())
-        #println("temp_term_status: $temp_term_status")
-        #println("temp_result_status: $temp_result_status")
         x._upper_termination_status = MOI.get(upper_optimizer, MOI.TerminationStatus())
         x._upper_result_status = MOI.get(upper_optimizer, MOI.PrimalStatus())
 
@@ -827,8 +875,6 @@ function solve_local_nlp!(x::Optimizer{S,T}) where {S <: MOI.AbstractOptimizer, 
             x._upper_feasibility = true
             obj = MOI.get(upper_optimizer, MOI.ObjectiveValue())
             sol = MOI.get(upper_optimizer, MOI.VariablePrimal(), upper_vars)
-            #println("obj: $obj")
-            #println("sol: $sol")
             x._upper_objective_value = MOI.get(upper_optimizer, MOI.ObjectiveValue())
             x._upper_solution[1:end] = MOI.get(upper_optimizer, MOI.VariablePrimal(), upper_vars)
         else
@@ -841,10 +887,14 @@ function solve_local_nlp!(x::Optimizer{S,T}) where {S <: MOI.AbstractOptimizer, 
     end
     return
 end
+
 """
-    postprocess!
+    upper_problem!
+
+Default upper bounding problem which simply calls `solve_local_nlp!`.
 """
 function upper_problem!(t::ExtensionType, x::Optimizer)
+
     solve_local_nlp!(x)
     return
 end
