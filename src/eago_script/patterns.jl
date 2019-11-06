@@ -63,6 +63,7 @@ dest_dag = [5 => 3, 4 => 3, 3 => 1, 2 => 1]
 dest = Template_Graph(dest_nds, dest_dag)
 register_substitution!(src, dest)
 
+
 # (5) register a^{\log(x)} = x^{\log(a)}
 src_nds = Dict{Int, Template_Node}(1 => Template_Node(:op, :^),
                                    2 => Template_Node(:num, :a),

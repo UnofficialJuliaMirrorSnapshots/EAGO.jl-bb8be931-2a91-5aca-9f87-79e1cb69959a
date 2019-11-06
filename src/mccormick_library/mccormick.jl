@@ -9,7 +9,7 @@ import Base: +, -, *, /, convert, in, isempty, one, zero, real, eps, max, min,
              sqrt, sin, cos, tan, min, max, sec, csc, cot, ^, step, sign, intersect,
              promote_rule, asinh, atanh, tanh, atan, asin, cosh, acos,
              sind, cosd, tand, asind, acosd, atand,
-             secd, cscd, cotd, asecd, acscd, acotd, isone
+             secd, cscd, cotd, asecd, acscd, acotd, isone, isnan
 
 import IntervalArithmetic: dist, mid, pow, +, -, *, /, convert, in, isempty,
                            one, zero, real, eps, max, min, abs, exp,
@@ -40,7 +40,7 @@ export MC, cc, cv, Intv, lo, hi,  cc_grad, cv_grad, cnst, +, -, *, /, convert,
        sind, cosd, tand, asind, acosd, atand,
        sinhd, coshd, tanhd, asinhd, acoshd, atanhd,
        secd, cscd, cotd, asecd, acscd, acotd,
-       secdh, cschd, cothd, asechd, acschd, acothd, isone
+       secdh, cschd, cothd, asechd, acschd, acothd, isone, isnan, interval_MC
 
 # Export inplace operators
 export plus!, mult!, min!, max!, minus!, div!, exp!, exp2!, exp10!, expm1!,
@@ -71,6 +71,15 @@ function __init__()
       setrounding(Interval, :accurate)
 end
 
+"""
+    RelaxTag
+
+An `abstract type` the subtypes of which define the manner of relaxation that will
+be performed for each operator applied to the MC object. Currently, the `struct NS`
+which specifies that standard (Mitsos 2009) are to be used is fully supported. Limited
+support is provided for differentiable McCormick relaxations specified by `struct Diff`
+(Khan 2017) and struct MV `struct MV` (Tsoukalas 2011.)
+"""
 abstract type RelaxTag end
 struct NS <: RelaxTag end
 struct MV <: RelaxTag end
@@ -142,7 +151,7 @@ function mid_grad(cc_grad::SVector{N,Float64}, cv_grad::SVector{N,Float64}, id::
   elseif (id == 2)
     return cv_grad
   elseif (id == 3)
-    return zeros(SVector{N,Float64})
+    return zero(SVector{N,Float64})
   end
 end
 
@@ -191,8 +200,8 @@ concave gradient, 'cc', the mid index values 'int1,int2', and the derivative of
 the convex and concave envelope functions 'dcv,dcc'.
 """
 function grad_calc(cv::SVector{N,Float64},cc::SVector{N,Float64},int1::Int,int2::Int,dcv::Float64,dcc::Float64) where {N, T <: RelaxTag}
-  cv_grad::SVector{N,Float64} = dcv*( int1==1 ? cv : ( int1==2 ? cv : zeros(SVector{N,Float64})))
-  cc_grad::SVector{N,Float64} = dcc*( int2==1 ? cc : ( int2==2 ? cc : zeros(SVector{N,Float64})))
+  cv_grad::SVector{N,Float64} = dcv*( int1==1 ? cv : ( int1==2 ? cv : zero(SVector{N,Float64})))
+  cc_grad::SVector{N,Float64} = dcc*( int2==1 ? cc : ( int2==2 ? cc : zero(SVector{N,Float64})))
   return cv_grad, cc_grad
 end
 
@@ -217,16 +226,17 @@ isequal(x::Interval{Float64},y::Interval{Float64},atol::Float64,rtol::Float64) =
 function cut(xL::Float64,xU::Float64,
              cv::Float64,cc::Float64,
              cv_grad::SVector{N,Float64},cc_grad::SVector{N,Float64}) where {N}
+
     if (cc > xU)
       cco::Float64 = xU
-      cc_grado::SVector{N,Float64} = zeros(SVector{N,Float64})
+      cc_grado::SVector{N,Float64} = zero(SVector{N,Float64})
     else
       cco = cc
       cc_grado = cc_grad
     end
     if (cv < xL)
       cvo::Float64 = xL
-      cv_grado::SVector{N,Float64} = zeros(SVector{N,Float64})
+      cv_grado::SVector{N,Float64} = zero(SVector{N,Float64})
     else
       cvo = cv
       cv_grado = cv_grad
@@ -253,7 +263,7 @@ end
 """
     MC
 
-`MC` is the smooth McCormick (w/ gradient) structure which is used to overload
+`MC{N, T <: RelaxTag} <: Real` is the McCormick (w/ (sub)gradient) structure which is used to overload
 standard calculations. The fields are:
 * `cc::Float64`: Concave relaxation
 * `cv::Float64`: Convex relaxation
@@ -278,24 +288,46 @@ struct MC{N, T <: RelaxTag} <: Real
 end
 
 """
-    MC(y::Interval{Float64})
+    MC{N,T}(y::Interval{Float64})
 
 Constructs McCormick relaxation with convex relaxation equal to `y.lo` and
 concave relaxation equal to `y.hi`.
 """
 function MC{N,T}(y::Interval{Float64}) where {N, T <: RelaxTag}
-    MC{N,T}(y.lo, y.hi, y, SVector{N,Float64}(zeros(Float64,N)),
-                           SVector{N,Float64}(zeros(Float64,N)), true)
+    MC{N,T}(y.lo, y.hi, y, zero(SVector{N,Float64}),
+                           zero(SVector{N,Float64}), true)
 end
+
+"""
+    MC{N,T}(y::Float64)
+
+Constructs McCormick relaxation with convex relaxation equal to `y` and
+concave relaxation equal to `y`.
+"""
 MC{N,T}(y::Float64) where {N, T <: RelaxTag} = MC{N,T}(Interval{Float64}(y))
 function MC{N,T}(y::Y) where {N, T <: RelaxTag, Y <: AbstractIrrational}
     MC{N,T}(Interval{Float64}(y))
 end
+
+"""
+    MC{N,T}(cv::Float64, cc::Float64)
+
+Constructs McCormick relaxation with convex relaxation equal to `cv` and
+concave relaxation equal to `cc`.
+"""
 function MC{N,T}(cv::Float64, cc::Float64) where {N, T <: RelaxTag}
     MC{N,T}(cv, cc, Interval{Float64}(cv,cc),
-          SVector{N,Float64}(zeros(Float64,N)),
-          SVector{N,Float64}(zeros(Float64,N)), true)
+            zero(SVector{N,Float64}),
+            zero(SVector{N,Float64}), true)
 end
+
+"""
+    MC{N,T}(val::Float64, Intv::Interval{Float64}, i::Int64)
+
+Constructs McCormick relaxation with convex relaxation equal to `val`,
+concave relaxation equal to `val`, interval bounds of `Intv`, and a unit subgradient
+with nonzero's ith dimension of length N.
+"""
 function MC{N,T}(val::Float64, Intv::Interval{Float64}, i::Int64) where {N, T <: RelaxTag}
     MC{N,T}(val, val, Intv, seed_gradient(i,Val(N)), seed_gradient(i,Val(N)), false)
 end
@@ -320,7 +352,7 @@ end
 sets convex and concave (sub)gradients of length `n` to be zero
 """
 function zgrad(x::MC{N,T}) where {N, T <: RelaxTag}
-  grad::SVector{N,Float64} = zeros(SVector{N,Float64})
+  grad::SVector{N,Float64} = zero(SVector{N,Float64})
   return MC{N,T}(x.cc,x.cv,grad,grad,x.Intv,x.cnst)
 end
 

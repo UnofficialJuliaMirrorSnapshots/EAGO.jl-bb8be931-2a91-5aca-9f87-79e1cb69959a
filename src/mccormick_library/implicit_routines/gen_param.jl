@@ -17,14 +17,14 @@ end
     pmc_kernel!
 
 Peforms the following steps in sequence:
-- Evaluates the function h!(H, x, xp, p, t) in place with x = z_mc, p = p_mc,
-xp = xp_mc, t = flt_param and preconditions H using an interval midpoint
-preconditioner if precond = true.
-- Evaluates the function hj!(J, x, xp, p, t) in place with x = aff_mc, p = p_mc,
-xp = xp_mc, t = flt_param and preconditions J using an interval midpoint
-preconditioner if precond = true.
+- Evaluates the function `h!(H, x, xp, p, t)` in place with `x = z_mc`, `p = p_mc`,
+`xp = xp_mc`, `t = flt_param` and preconditions H using an interval midpoint
+preconditioner if `precond = true`.
+- Evaluates the function `hj!(J, x, xp, p, t)` in place with `x = aff_mc`, `p = p_mc`,
+`xp = xp_mc`, `t = flt_param` and preconditions J using an interval midpoint
+preconditioner if `precond = true`.
 - Lastly, applies a Newton-type contractor method. The parametric GS Newton
-contractor if cntr = :Newton and the componentwise Krawczyk contractor otherwise.
+contractor if `cntr = :Newton` and the componentwise Krawczyk contractor otherwise.
 """
 function pmc_kernel!(h!::Function, hj!::Function, H, J,
                      Y::Array{Float64,2}, z_mc::Vector{MC{N,T}}, aff_mc::Vector{MC{N,T}},
@@ -91,6 +91,12 @@ function gen_expansion_params(h::Function, hj::Function,
   return sto_out
 end
 
+"""
+    gen_expansion_params!
+
+Generates the relaxations at `pref_mc` that can be subsequentially used to compute affine
+relaxations for use in relaxing the implicit function.
+"""
 function gen_expansion_params!(h!::Function, hj!::Function, pref_mc::Vector{MC{N,T}}, xp_mc::Vector{MC{N,T}},
                                x_mc, xa_mc::Vector{MC{N,T}}, xA_mc::Vector{MC{N,T}}, z_mc::Vector{MC{N,T}},
                                aff_mc::Vector{MC{N,T}}, X::Vector{Interval{Float64}}, P::Vector{Interval{Float64}},
@@ -114,7 +120,7 @@ function gen_expansion_params!(h!::Function, hj!::Function, pref_mc::Vector{MC{N
   z_mc[:] = lambda*xa_mc[:] + (1.0 - lambda)*xA_mc[:]
   sto_out[:,1:1] .= x_mc
 
-  subgrad_cntr && set_reference!(cv.(pref_mc),P,subgrad_cntr)
+  #subgrad_cntr && set_reference!(cv.(pref_mc),P,subgrad_cntr)
   for k=1:(kmax-1)
     pmc_kernel!(h!, hj!, H, J, Y, z_mc, aff_mc, pref_mc, x_mc, xa_mc, xA_mc,
                 cntr, nx, xp_mc, flt_param, precond)
@@ -122,6 +128,6 @@ function gen_expansion_params!(h!::Function, hj!::Function, pref_mc::Vector{MC{N
     correct_exp!(xa_mc, xA_mc, z_mc, x_mc, X, nx, aff_eps)
     sto_out[:,(k+1):(k+1)] .= x_mc
   end
-  subgrad_cntr && set_reference!(cv.(pref_mc), P, false)
+  #subgrad_cntr && set_reference!(cv.(pref_mc), P, false)
   return
 end

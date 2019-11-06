@@ -1,7 +1,10 @@
 ## Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
-codecov: true
-coveralls: true
+
+sudo: required
+
+#codecov: true
+#coveralls: true
 os:
   - linux
   #- osx
@@ -15,6 +18,21 @@ julia:
 #  allow_failures:
 #  - julia: nightly
 
+env:
+  global:
+    - DOCUMENTER_DEBUG=true
+
+jobs:
+  include:
+    - stage: "Documentation"
+      julia: 1.0
+      os: linux
+      script:
+        - julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd()));
+                                               Pkg.instantiate()'
+        - julia --project=docs/ docs/make.jl
+      after_success: skip
+
 notifications:
   email: false
 
@@ -22,5 +40,7 @@ addons:
   apt_packages:
     - gfortran
 
-after_success:
-    - julia --color=yes -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
+#after_success:
+#   - julia --color=yes -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
+
+sudo: false

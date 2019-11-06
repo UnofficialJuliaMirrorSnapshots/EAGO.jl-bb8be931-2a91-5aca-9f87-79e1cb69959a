@@ -76,12 +76,6 @@ function mc_denseband_precondition!(h!::Function, hj!::Function, z_mc, aff_mc, p
   end
 end
 
-"""
-    smooth_cut
-
-An operator that cuts the `x_mc` object using the `x_mc_int bounds` in a
-differentiable fashion.
-"""
 function smooth_cut(x_mc::MC{N,T},x_mc_int::MC{N,T}) where {N,T <: RelaxTag}
   t_cv::MC{N,T} = x_mc + max(0.0, x_mc_int-x_mc)
   t_cc::MC{N,T} = x_mc + min(0.0, x_mc-x_mc_int)
@@ -93,10 +87,10 @@ end
     final_cut
 
 An operator that cuts the `x_mc` object using the `x_mc_int bounds` in a
-differentiable or nonsmooth fashion as specified by the `MC_param.mu flag`.
+differentiable or nonsmooth fashion to achieve a composite relaxation within
+`x_mc_int`.
 """
-function final_cut(x_mc::MC{N,T},x_mc_int::MC{N,T}) where {N,T <: RelaxTag}
-  if (MC_param.mu < 1)
+function final_cut(x_mc::MC{N,NS},x_mc_int::MC{N,NS}) where {N}
     Intv = x_mc.Intv ∩ x_mc_int.Intv
     if (x_mc.cc < x_mc_int.cc)
       cc = x_mc.cc
@@ -112,10 +106,11 @@ function final_cut(x_mc::MC{N,T},x_mc_int::MC{N,T}) where {N,T <: RelaxTag}
       cv = x_mc_int.cv
       cv_grad = x_mc_int.cv_grad
     end
-    x_out::MC{N,T} = MC{N,T}(cv,cc,(x_mc.Intv ∩ x_mc_int.Intv),cv_grad,cc_grad,x_mc.cnst)
-  else
-    x_out = smooth_cut(x_mc,x_mc_int)
-  end
+    x_out::MC{N,NS} = MC{N,NS}(cv,cc,(x_mc.Intv ∩ x_mc_int.Intv),cv_grad,cc_grad,x_mc.cnst)
+  return x_out
+end
+function final_cut(x_mc::MC{N,Diff},x_mc_int::MC{N,Diff}) where {N}
+  x_out = smooth_cut(x_mc,x_mc_int)
   return x_out
 end
 
